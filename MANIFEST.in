@@ -1,0 +1,5 @@
+include AGENTS.md
+include requirements-dev.lock
+recursive-include docs *.md
+recursive-include tests *.py
+include scripts/export_branding.py

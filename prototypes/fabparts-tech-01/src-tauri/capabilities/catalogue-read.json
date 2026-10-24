@@ -1,0 +1,5 @@
+{
+  "identifier":"catalogue-read", "description":"Only the five typed TECH-01 commands on the local main window.",
+  "windows":["main"], "local":true,
+  "permissions":["allow-health","allow-list-libraries","allow-list-components","allow-get-component","allow-restart-engine"]
+}

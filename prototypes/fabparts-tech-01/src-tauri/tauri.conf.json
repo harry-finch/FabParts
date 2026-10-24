@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FabParts TECH-01",
+  "version": "0.1.0",
+  "identifier": "org.fabparts.tech01",
+  "build": {
+    "frontendDist": "../dist",
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": {
+      "script": "npm run build",
+      "wait": true
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "FabParts \u2014 TECH-01 \u00b7 Lecture seule",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "capabilities": [
+        "catalogue-read"
+      ],
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; frame-src 'none'; base-uri 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app"
+    ],
+    "externalBin": [
+      "binaries/fabparts-engine"
+    ],
+    "icon": [
+      "../../../src/kipartmanager/ui/branding/app/png/kipart-256.png",
+      "../../../src/kipartmanager/ui/branding/app/kipart-icon.icns",
+      "../../../src/kipartmanager/ui/branding/app/kipart-icon.ico"
+    ]
+  }
+}
