@@ -282,3 +282,30 @@ un aperçu partiel sont explicites. Un état de chargement représente l'activit
 sans pourcentage inventé. Les warnings et unités restent lisibles dans le dialogue.
 Les coordonnées WRL ne permettent pas, à elles seules, de déduire une échelle
 physique ; STEP est en mm. Aucun aperçu ne vaut validation mécanique.
+
+## Ingestion réelle Tauri TECH-03
+
+Le parcours reprend les trois étapes UX 02 : informations/fichiers,
+identification/package, puis quatre ressources et confirmation. Le bouton
+d'ajout et la reprise d'un DRAFT sont disponibles dans la session sandbox writable.
+Une référence suffit ; le package et les fichiers restent facultatifs. Aucun
+package ni choix de ressource n'est déduit silencieusement du nom d'un fichier.
+
+Le sélecteur natif prépare les fichiers ; leur présence ne signifie pas import
+canonique. La grille conserve simultanément les quatre aperçus, avec une hauteur
+compacte et le PDF cadré sur sa page entière. Recherche et choix restent proches
+de chaque carte ; les détails peuvent défiler sans masquer l'action finale.
+Provenance, sélection, UNCHECKED et DRAFT sont distincts. Une confirmation backend
+effective précède le message « Enregistré », puis la liste et la fiche sont rechargées.
+
+Un doublon propose consultation, ajout à une autre bibliothèque ou variante
+explicitement confirmée. Une seule Part peut apparaître dans plusieurs bibliothèques.
+Le package partagé conserve ses choix mécaniques ; un conflit exige un package
+distinct nommé. La reprise restaure les valeurs et enregistre les appartenances
+cochées, avec détection des modifications concurrentes.
+
+Le double clic est bloqué pendant confirmation ; en cas de résultat incertain,
+l'interface consulte le reçu et propose la récupération, sans annoncer de succès
+prématuré. Les contrôles du parcours sont traduits FR/EN ; les diagnostics moteur
+hérités encore en français sont une réserve explicite. Les preuves natives en
+clair/sombre et fenêtre étroite figurent dans [TECH-03](FABPARTS_2_TECH_03.md).

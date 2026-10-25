@@ -20,7 +20,7 @@ def test_migration_matches_orm_and_repeated_upgrade(engine: Engine) -> None:
     with engine.connect() as connection:
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0007_asset_provenance"
+            == "0008_ingestion_operations"
         )
         assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
         assert connection.scalar(text("PRAGMA foreign_keys")) == 1

@@ -10,6 +10,7 @@ from sqlalchemy.pool import NullPool
 from kipartmanager.domain.entities import DomainError
 
 SCHEMA = "0007_asset_provenance"
+COMPATIBLE_SCHEMAS = {SCHEMA, "0008_ingestion_operations"}
 COPY_FORMAT = "fabparts-tech01-copy/1"
 
 
@@ -59,7 +60,7 @@ def open_copy(data_dir: Path) -> Engine:
     try:
         with engine.connect() as connection:
             version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            if version != SCHEMA:
+            if version not in COMPATIBLE_SCHEMAS:
                 raise DomainError("Schéma incompatible ; aucune migration n’a été exécutée.")
     except Exception:
         engine.dispose()

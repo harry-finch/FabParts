@@ -35,6 +35,7 @@ export class Controller {
   private selection = 0;
   private generation = 0;
   private checkingHealth = false;
+  private preferredId = "";
   private invoke: Transport;
   private changed: (state: Snapshot) => void;
   constructor(invoke: Transport, changed: (state: Snapshot) => void) { this.invoke = invoke; this.changed = changed; }
@@ -67,16 +68,28 @@ export class Controller {
       const page = await this.invoke<Page>('list_components',{query});
       if (token !== this.request) return;
       this.emit({page,loading:false});
-      if (page.components[0]) await this.select(page.components[0].id);
+      if (page.components[0]) await this.select(page.components.find(c=>c.id===this.preferredId)?.id || page.components[0].id);
     } catch (e) { if (token === this.request) this.fail(e); }
   }
   async select(id: string) {
+    this.preferredId=id;
     const token = ++this.selection;
     this.emit({selectedId:id,detail:null,detailLoading:true});
     try {
       const detail = await this.invoke<Detail>('get_component',{id});
       if (token === this.selection) this.emit({detail,detailLoading:false});
     } catch (e) { if (token === this.selection) this.fail(e); }
+  }
+  async saved(id:string) {
+    const generation=this.generation;
+    try {
+      const detail=await this.invoke<Detail>('get_component',{id});
+      const libraries=await this.invoke<Library[]>('list_libraries');
+      if(generation!==this.generation)return;
+      this.preferredId=id;this.emit({libraries});
+      await this.load({...defaultQuery(),search:detail.reference});
+      if(generation===this.generation && this.state.phase==='ready')await this.select(id);
+    }catch(error){if(generation===this.generation)this.fail(error);}
   }
   async heartbeat() {
     if (this.checkingHealth || this.state.phase !== 'ready' || this.state.loading || this.state.detailLoading) return;

@@ -46,3 +46,5 @@ export const text = (key: keyof typeof fr) => (i18n.locale === 'fr' ? fr : en)[k
 export const stateLabel = (s: string) => text(s === 'DRAFT' ? 'draft' : s === 'IDENTIFIED' ? 'identified' : 'deprecated');
 export const roles = ['SYMBOL','FOOTPRINT','MODEL_3D','DATASHEET'];
 export const roleLabel = (r: string) => text(r === 'SYMBOL' ? 'symbol' : r === 'FOOTPRINT' ? 'footprint' : r === 'MODEL_3D' ? 'model' : 'datasheet');
+
+export const tr = (fr:string,en:string) => i18n.locale==='fr' ? fr : en;

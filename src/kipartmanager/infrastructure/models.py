@@ -204,6 +204,19 @@ class IdentificationRow(Base):
     data_json: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class IngestionOperationRow(Base):
+    __tablename__ = "ingestion_operations"
+    __table_args__ = (
+        CheckConstraint(
+            "length(request_sha256) = 64 AND request_sha256 NOT GLOB '*[^0-9a-f]*'",
+            name="request_sha256_valid",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    request_sha256: Mapped[str] = mapped_column(String, nullable=False)
+    part_id: Mapped[UUID] = mapped_column(ForeignKey("parts.id"), nullable=False)
+
+
 class DocumentRow(Base):
     __tablename__ = "part_documents"
     __table_args__ = (

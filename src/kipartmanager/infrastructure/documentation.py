@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import Engine, insert, select, text
+from sqlalchemy import Engine, insert, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from kipartmanager.infrastructure.models import (
     PartRow,
     part_assets,
 )
+from kipartmanager.infrastructure.sessions import repository_session
 
 
 def encode(value: Identification | PartDocument) -> str:
@@ -83,8 +84,8 @@ def document_from(raw: str) -> PartDocument:
 
 
 class SqliteDocumentation:
-    def __init__(self, engine: Engine) -> None:
-        self.engine = engine
+    def __init__(self, engine: Engine, session: Session | None = None) -> None:
+        self.engine, self.session = engine, session
 
     @staticmethod
     def _identification(session: Session, part_id: UUID) -> Identification:
@@ -97,13 +98,12 @@ class SqliteDocumentation:
         return value
 
     def identification(self, part_id: UUID) -> Identification:
-        with Session(self.engine) as session:
+        with repository_session(self.engine, self.session) as session:
             return self._identification(session, part_id)
 
     def save_identification(self, value: Identification, expected: Identification) -> None:
         try:
-            with Session(self.engine) as session, session.begin():
-                session.execute(text("BEGIN IMMEDIATE"))
+            with repository_session(self.engine, self.session, write=True) as session:
                 if session.get(PartRow, value.part_id) is None:
                     raise DomainError("Composant introuvable.")
                 if value.part_id != expected.part_id or value.revision != expected.revision + 1:
@@ -121,7 +121,7 @@ class SqliteDocumentation:
             raise DomainError("Identification non enregistrée ; transaction annulée.") from error
 
     def documents(self, part_id: UUID) -> tuple[PartDocument, ...]:
-        with Session(self.engine) as session:
+        with repository_session(self.engine, self.session) as session:
             result = tuple(
                 document_from(row.data_json)
                 for row in session.scalars(
@@ -134,8 +134,7 @@ class SqliteDocumentation:
 
     def add_document(self, document: PartDocument, asset: Asset, *, new_asset: bool) -> None:
         try:
-            with Session(self.engine) as session, session.begin():
-                session.execute(text("BEGIN IMMEDIATE"))
+            with repository_session(self.engine, self.session, write=True) as session:
                 if session.get(PartRow, document.part_id) is None:
                     raise DomainError("Composant introuvable.")
                 if (

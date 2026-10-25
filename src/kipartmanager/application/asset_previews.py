@@ -15,6 +15,7 @@ from kipartmanager.ports.previews import (
     PDF_CHUNK,
     PDF_LIMIT,
     Drawing,
+    PreviewContent,
     PreviewProblem,
     PreviewReader,
     Primitive,
@@ -129,30 +130,34 @@ class AssetPreviews:
                 "sha256": preview.sha256,
                 "storage": "reference" if choice.reference else "managed",
             }
-            if kind is AssetType.MODEL_3D:
-                if self.models is None:
-                    raise PreviewProblem("unsupported", "Service 3D indisponible.")
-                result.update(
-                    status="loading", handle=self.models.start(preview.content.model_source)
-                )
-            elif kind is AssetType.DATASHEET:
-                data = preview.content.pdf
-                if len(data) > PDF_LIMIT:
-                    raise PreviewProblem("too_large", "PDF limité à 16 Mio.")
-                handle = self.buffers.put(data)
-                result.update(handle=handle, size_bytes=len(data), chunk_bytes=PDF_CHUNK)
-            else:
-                drawings = preview.content.drawings
-                if len(drawings) > 64 or sum(len(d.primitives) for d in drawings) > 5000:
-                    raise PreviewProblem(
-                        "too_large", "Aperçu limité à 64 représentations et 5 000 primitives."
-                    )
-                result["drawings"] = [drawing_dto(d) for d in drawings]
-            return result
+            return self.present(kind, preview.content, result)
         except PreviewProblem as error:
             return {"status": error.status, "message": str(error)}
         except DomainError as error:
             return {"status": "error", "message": str(error)}
+
+    def present(
+        self, kind: AssetType, content: PreviewContent, result: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Shared bounded transport for canonical and preparation previews."""
+        if kind is AssetType.MODEL_3D:
+            if self.models is None:
+                raise PreviewProblem("unsupported", "Service 3D indisponible.")
+            result.update(status="loading", handle=self.models.start(content.model_source))
+        elif kind is AssetType.DATASHEET:
+            data = content.pdf
+            if len(data) > PDF_LIMIT:
+                raise PreviewProblem("too_large", "PDF limité à 16 Mio.")
+            handle = self.buffers.put(data)
+            result.update(handle=handle, size_bytes=len(data), chunk_bytes=PDF_CHUNK)
+        else:
+            drawings = content.drawings
+            if len(drawings) > 64 or sum(len(d.primitives) for d in drawings) > 5000:
+                raise PreviewProblem(
+                    "too_large", "Aperçu limité à 64 représentations et 5 000 primitives."
+                )
+            result["drawings"] = [drawing_dto(d) for d in drawings]
+        return result
 
     def chunk(self, handle: str, offset: int) -> dict[str, Any]:
         return self.buffers.chunk(handle, offset)

@@ -3,8 +3,6 @@
 import sqlite3
 from pathlib import Path
 
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import URL, Engine, create_engine, event
 
 
@@ -20,6 +18,10 @@ def create_database_engine(path: Path) -> Engine:
 
 
 def migrate(engine: Engine, revision: str = "head", *, downgrade: bool = False) -> None:
+    # The packaged sidecar never migrates. Keep Alembic in explicit administration only.
+    from alembic import command
+    from alembic.config import Config
+
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).with_name("migrations")))
     with engine.begin() as connection:

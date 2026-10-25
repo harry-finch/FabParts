@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-choose-ingestion-files"
+description = "Enables the choose_ingestion_files command without any pre-configured scope."
+commands.allow = ["choose_ingestion_files"]
+
+[[permission]]
+identifier = "deny-choose-ingestion-files"
+description = "Denies the choose_ingestion_files command without any pre-configured scope."
+commands.deny = ["choose_ingestion_files"]
