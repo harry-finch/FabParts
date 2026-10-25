@@ -25,7 +25,7 @@ class ReadonlyPreviews:
     def read(
         self, root: Path, relative: str, digest: str, kind: AssetType, selected: str = ""
     ) -> PreviewContent:
-        limit = PDF_LIMIT if kind is AssetType.DATASHEET else 8 * 1024 * 1024
+        limit = PDF_LIMIT if kind in {AssetType.DATASHEET, AssetType.MODEL_3D} else 8 * 1024 * 1024
         try:
             target = root / relative
             if Path(relative).is_absolute() or not target.resolve().is_relative_to(root):
@@ -58,6 +58,8 @@ class ReadonlyPreviews:
             raise PreviewProblem(
                 "error", "Fichier modifié ou corrompu : empreinte SHA-256 différente."
             )
+        if kind is AssetType.MODEL_3D:
+            return PreviewContent(model_source=data)
         if kind is AssetType.DATASHEET:
             if not data.startswith(b"%PDF-"):
                 raise PreviewProblem("error", "Document PDF invalide : en-tête non reconnu.")
@@ -112,9 +114,11 @@ class ReadonlyPreviews:
         ):
             raise PreviewProblem("inaccessible", "Configuration KiCad hors limites.")
         roots = LocalKiCadIndex(self.root).configuration()
-        folder = {AssetType.SYMBOL: roots.symbols, AssetType.FOOTPRINT: roots.footprints}.get(
-            reference.asset_type
-        )
+        folder = {
+            AssetType.SYMBOL: roots.symbols,
+            AssetType.FOOTPRINT: roots.footprints,
+            AssetType.MODEL_3D: roots.models,
+        }.get(reference.asset_type)
         if not folder:
             raise PreviewProblem("missing", "Ressource introuvable : dossier KiCad non configuré.")
         return self.read(

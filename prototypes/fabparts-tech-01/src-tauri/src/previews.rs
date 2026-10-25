@@ -40,13 +40,16 @@ pub fn handle(value: &str) -> Result<(), Failure> {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     {
-        return Err(Failure::new("INVALID_PARAMS", "Handle PDF invalide."));
+        return Err(Failure::new("INVALID_PARAMS", "Handle d’aperçu invalide."));
     }
     Ok(())
 }
 pub fn offset(value: u32) -> Result<(), Failure> {
     if value >= 16 * 1024 * 1024 || value % 65536 != 0 {
-        return Err(Failure::new("INVALID_PARAMS", "Position PDF hors limites."));
+        return Err(Failure::new(
+            "INVALID_PARAMS",
+            "Position d’aperçu hors limites.",
+        ));
     }
     Ok(())
 }
@@ -78,6 +81,28 @@ mod tests {
         assert!(serde_json::from_value::<PreviewQuery>(v).is_err());
     }
     #[test]
+    fn mesh_metadata_must_be_bounded_and_versioned() {
+        let valid = json!({"status":"ready","mesh_format":"FPM1","chunk_bytes":65536,
+            "size_bytes":109,"vertices":3,"triangles":1,"mesh_sha256":"a".repeat(64)});
+        assert!(mesh_descriptor(&valid).is_ok());
+        for patch in [
+            json!({"vertices":60001}),
+            json!({"triangles":0}),
+            json!({"size_bytes":17000000}),
+            json!({"chunk_bytes":65537}),
+            json!({"mesh_format":"unknown"}),
+            json!({"mesh_sha256":"wrong"}),
+        ] {
+            let mut value = valid.clone();
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(patch.as_object().unwrap().clone());
+            assert!(mesh_descriptor(&value).is_err());
+        }
+        assert!(mesh_descriptor(&json!({"status":"converter_missing"})).is_ok());
+    }
+    #[test]
     fn bounded_handles_and_chunks() {
         assert!(handle(&"a".repeat(48)).is_ok());
         for v in ["../a", "/tmp/doc.pdf", "", &"a".repeat(49)] {
@@ -87,5 +112,30 @@ mod tests {
         assert!(offset(65536).is_ok());
         assert!(offset(1).is_err());
         assert!(offset(16 * 1024 * 1024).is_err());
+    }
+}
+
+pub fn mesh_descriptor(value: &serde_json::Value) -> Result<(), Failure> {
+    if value["status"] != "ready" {
+        return Ok(());
+    }
+    let valid = value["mesh_format"] == "FPM1"
+        && value["chunk_bytes"] == 65536
+        && value["size_bytes"]
+            .as_u64()
+            .is_some_and(|n| n > 0 && n <= 16 * 1024 * 1024)
+        && value["vertices"]
+            .as_u64()
+            .is_some_and(|n| n > 0 && n <= 60000)
+        && value["triangles"]
+            .as_u64()
+            .is_some_and(|n| n > 0 && n <= 60000)
+        && value["mesh_sha256"]
+            .as_str()
+            .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()));
+    if valid {
+        Ok(())
+    } else {
+        Err(Failure::new("INVALID_RESPONSE", "Maillage hors limites."))
     }
 }

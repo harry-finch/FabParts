@@ -263,3 +263,22 @@ Ce code couleur décrit des couches, sans attribuer un statut de qualification.
 Les coordonnées sont en mm et les limites visibles viennent des primitives,
 jamais du nom d’un boîtier. Le zoom est centré et borné, avec recentrage ; le
 sélecteur unité/variante et les couches ne changent aucune donnée métier.
+
+## Aperçus Tauri TECH-02B
+
+La carte Modèle 3D utilise le même sélecteur de ressource associée et le même
+dialogue que les aperçus TECH-02A. La consultation d'un modèle associé ne change
+pas la sélection métier. OrbitControls : glisser gauche pour tourner, molette
+pour zoomer, clic droit/Maj-glisser pour déplacer ; le bouton main active aussi
+le déplacement au bouton gauche. Cadrage et vues standard restent dans une petite
+barre d'outils, traduite FR/EN. Z est vertical ; face vue depuis −Y, arrière depuis
++Y, dessus +Z, dessous −Z, isométrique depuis (+X,−Y,+Z).
+
+Le cadrage utilise les bounds réels, avec recentrage de présentation seulement.
+Le fond reprend `--bg-workspace`, les commandes les tokens communs et la sélection
+bleue. Lumière neutre ambiante/directionnelle, matériaux simples ; aucun décor ou
+modèle de remplacement. Une erreur WebGL/conversion, une ressource manquante ou
+un aperçu partiel sont explicites. Un état de chargement représente l'activité
+sans pourcentage inventé. Les warnings et unités restent lisibles dans le dialogue.
+Les coordonnées WRL ne permettent pas, à elles seules, de déduire une échelle
+physique ; STEP est en mm. Aucun aperçu ne vaut validation mécanique.

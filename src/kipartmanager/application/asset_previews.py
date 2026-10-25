@@ -1,21 +1,17 @@
 """Read-only business resolution and bounded neutral previews for the desktop IPC."""
 
-import base64
 import math
-import secrets
-import time
-from collections import OrderedDict
 from dataclasses import asdict
 from typing import Any
 from uuid import UUID
 
 from kipartmanager.application.catalogue_reader import CatalogueReader
+from kipartmanager.application.model_jobs import ModelJobs
+from kipartmanager.application.preview_buffers import PreviewBuffers
 from kipartmanager.application.previews import Previews
 from kipartmanager.domain.entities import Asset, AssetType, DomainError, Package, Part
 from kipartmanager.domain.resolution import ResourceChoice
 from kipartmanager.ports.previews import (
-    HANDLE_TTL,
-    MAX_HANDLES,
     PDF_CHUNK,
     PDF_LIMIT,
     Drawing,
@@ -62,19 +58,22 @@ def drawing_dto(drawing: Drawing) -> dict[str, Any]:
 
 
 class AssetPreviews:
-    def __init__(self, catalogue: CatalogueReader, reader: PreviewReader) -> None:
+    def __init__(
+        self, catalogue: CatalogueReader, reader: PreviewReader, models: ModelJobs | None = None
+    ) -> None:
         self.catalogue = catalogue
         self.previews = Previews(catalogue.catalogue, reader)
-        self.handles: OrderedDict[str, tuple[float, bytes]] = OrderedDict()
+        self.buffers = PreviewBuffers()
+        self.handles = self.buffers.handles
+        self.models = models
 
     def _expire(self) -> None:
-        now = time.monotonic()
-        for handle, (expires, _) in list(self.handles.items()):
-            if expires <= now:
-                del self.handles[handle]
+        self.buffers.expire()
 
     def clear(self) -> None:
         self.handles.clear()
+        if self.models:
+            self.models.close()
 
     def resolve(
         self, identity: UUID, role: AssetType, asset_id: UUID | None
@@ -111,10 +110,8 @@ class AssetPreviews:
         self._expire()
         try:
             kind = AssetType(role)
-            if kind is AssetType.MODEL_3D:
-                raise PreviewProblem(
-                    "unsupported", "Prévisualisation 3D disponible dans une étape ultérieure"
-                )
+            if kind is AssetType.MODEL_3D and self.models is None:
+                raise PreviewProblem("unsupported", "Service 3D indisponible.")
             choice, selected = self.resolve(UUID(id), kind, UUID(asset_id) if asset_id else None)
             if (
                 choice.asset_id
@@ -132,14 +129,17 @@ class AssetPreviews:
                 "sha256": preview.sha256,
                 "storage": "reference" if choice.reference else "managed",
             }
-            if kind is AssetType.DATASHEET:
+            if kind is AssetType.MODEL_3D:
+                if self.models is None:
+                    raise PreviewProblem("unsupported", "Service 3D indisponible.")
+                result.update(
+                    status="loading", handle=self.models.start(preview.content.model_source)
+                )
+            elif kind is AssetType.DATASHEET:
                 data = preview.content.pdf
                 if len(data) > PDF_LIMIT:
                     raise PreviewProblem("too_large", "PDF limité à 16 Mio.")
-                handle = secrets.token_hex(24)
-                while len(self.handles) >= MAX_HANDLES:
-                    self.handles.popitem(last=False)
-                self.handles[handle] = (time.monotonic() + HANDLE_TTL, data)
+                handle = self.buffers.put(data)
                 result.update(handle=handle, size_bytes=len(data), chunk_bytes=PDF_CHUNK)
             else:
                 drawings = preview.content.drawings
@@ -155,21 +155,8 @@ class AssetPreviews:
             return {"status": "error", "message": str(error)}
 
     def chunk(self, handle: str, offset: int) -> dict[str, Any]:
-        self._expire()
-        entry = self.handles.get(handle)
-        if not entry:
-            raise DomainError("Aperçu PDF expiré. Rouvrez le document.")
-        _, data = entry
-        if not 0 <= offset < len(data) or offset % PDF_CHUNK:
-            raise DomainError("Position de bloc invalide.")
-        block = data[offset : offset + PDF_CHUNK]
-        return {
-            "offset": offset,
-            "data": base64.b64encode(block).decode("ascii"),
-            "eof": offset + len(block) == len(data),
-        }
+        return self.buffers.chunk(handle, offset)
 
     def release(self, handle: str) -> dict[str, bool]:
-        self.handles.pop(handle, None)
-        self._expire()
+        self.buffers.release(handle)
         return {"released": True}

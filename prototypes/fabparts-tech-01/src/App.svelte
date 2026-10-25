@@ -79,7 +79,7 @@ function resize(event: PointerEvent) {
       </section>{/if}
     </main>
   </div>
-  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{t('copy')}</span>{#snippet right()}<span>TECH-02A · IPC v1</span>{/snippet}</StatusBar>
+  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{t('copy')}</span>{#snippet right()}<span>TECH-02B · IPC v1</span>{/snippet}</StatusBar>
 </div>
 
 <style>

@@ -8,11 +8,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
 from pathlib import Path
+from threading import Event
 
 from kipartmanager.domain.entities import DomainError
-from kipartmanager.ports.previews import Mesh
+from kipartmanager.ports.previews import Mesh, PreviewProblem
 
 MAX_VERTICES = 60_000
 MAX_FACES = 20_000
@@ -48,9 +50,12 @@ class Node:
 
 
 class VRML:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, cancel: Event | None = None) -> None:
+        self.cancel = cancel
         self.tokens = []
         for match in TOKEN.finditer(text):
+            if cancel and cancel.is_set():
+                raise PreviewProblem("cancelled", "Lecture WRL annulée.")
             token = match.group()
             if not token.isspace() and not token.startswith("#") and token != ",":
                 self.tokens.append(token)
@@ -60,6 +65,8 @@ class VRML:
         self.definitions: dict[str, Node] = {}
 
     def pop(self) -> str:
+        if self.cancel and self.cancel.is_set():
+            raise PreviewProblem("cancelled", "Lecture WRL annulée.")
         if self.index >= len(self.tokens):
             raise DomainError("WRL tronqué.")
         value = self.tokens[self.index]
@@ -215,20 +222,26 @@ def checked_mesh(
     )
 
 
-def wrl_mesh(content: bytes) -> Mesh:
+def wrl_mesh(content: bytes, cancel: Event | None = None) -> Mesh:
     try:
         text = content.decode("utf-8-sig")
     except UnicodeError as error:
         raise DomainError("WRL non UTF-8.") from error
     if not text.startswith("#VRML V2.0 utf8"):
         raise DomainError("Seul le WRL VRML97 (#VRML V2.0 utf8) est pris en charge.")
-    parser = VRML(text)
+    parser = VRML(text, cancel)
     vertices: list[list[float]] = []
     faces: list[list[int]] = []
     colors: list[list[float]] = []
     warnings: set[str] = set()
+    sides: list[bool] = []
+    visits = 0
 
     def visit(value: object, matrix: Matrix = IDENTITY, depth: int = 0) -> None:
+        nonlocal visits
+        visits += 1
+        if visits > 100000 or (cancel and cancel.is_set()):
+            raise DomainError("Scène WRL trop complexe ou annulée.")
         if depth > 48:
             raise DomainError("Scène WRL trop imbriquée.")
         if isinstance(value, list):
@@ -257,6 +270,12 @@ def wrl_mesh(content: bytes) -> Mesh:
                     vertices.append([sum(matrix[j][k] * p[k] for k in range(4)) for j in range(3)])
                 color = [0.65, 0.68, 0.72]
                 appearance = f.get("appearance")
+                if not isinstance(appearance, Node):
+                    warnings.add("Matériau absent : teinte neutre de présentation.")
+                if "normal" in geom.fields or "creaseAngle" in geom.fields:
+                    warnings.add(
+                        "Normales recalculées par face ; lissage du fichier non reproduit."
+                    )
                 if isinstance(appearance, Node):
                     material = appearance.fields.get("material")
                     if isinstance(material, Node):
@@ -273,7 +292,8 @@ def wrl_mesh(content: bytes) -> Mesh:
                     if index == -1:
                         if len(face) < 3:
                             raise DomainError("Face WRL incomplète.")
-                        faces.append(face)
+                        faces.append(face if geom.fields.get("ccw") != "FALSE" else face[::-1])
+                        sides.append(geom.fields.get("solid") == "FALSE")
                         colors.append(color)
                         face = []
                         if len(faces) > MAX_FACES:
@@ -285,7 +305,8 @@ def wrl_mesh(content: bytes) -> Mesh:
                         if len(face) > 256:
                             raise DomainError("Face WRL trop complexe.")
                 if face:
-                    faces.append(face)
+                    faces.append(face if geom.fields.get("ccw") != "FALSE" else face[::-1])
+                    sides.append(geom.fields.get("solid") == "FALSE")
                     colors.append(color)
             elif value.kind not in {
                 "Appearance",
@@ -307,11 +328,25 @@ def wrl_mesh(content: bytes) -> Mesh:
 
     while parser.index < len(parser.tokens):
         visit(parser.value())
-    return checked_mesh(vertices, faces, colors, tuple(sorted(warnings)))
+    return replace(
+        checked_mesh(vertices, faces, colors, tuple(sorted(warnings))), double_sided=tuple(sides)
+    )
 
 
 # Executed by FreeCAD's own Python, never by the application's interpreter.
-STEP_SCRIPT = """import json, os
+STEP_SCRIPT = """import json, os, sys
+if os.environ.get("FABPARTS_BOUNDED_CONVERSION") == "1":
+    import resource
+    limits = [(resource.RLIMIT_FSIZE, 16*1024**2), (resource.RLIMIT_CPU, 30)]
+    # Darwin rejects RLIMIT_DATA and does not enforce RLIMIT_AS reliably.
+    if sys.platform.startswith("linux"):
+        limits.append((resource.RLIMIT_AS, 2*1024**3))
+    for kind, maximum in limits:
+        soft, hard = resource.getrlimit(kind)
+        limit = maximum if hard == resource.RLIM_INFINITY else min(maximum, hard)
+        if soft != resource.RLIM_INFINITY:
+            limit = min(limit, soft)
+        resource.setrlimit(kind, (limit, limit))
 import Part
 shape = Part.Shape()
 shape.read(os.environ['KIPART_PREVIEW_INPUT'])
@@ -342,14 +377,15 @@ def freecad_command() -> str | None:
     return None
 
 
-def step_mesh(content: bytes) -> Mesh:
+def step_mesh(content: bytes, cancel: Event | None = None) -> Mesh:
     if not content.lstrip().startswith(b"ISO-10303-21;"):
         raise DomainError("En-tête STEP non reconnu.")
     command = freecad_command()
     if command is None:
-        raise DomainError(
+        raise PreviewProblem(
+            "converter_missing",
             "Aperçu STEP indisponible : installer FreeCAD local ou définir "
-            "KIPART_FREECAD_CMD vers freecadcmd. Aucun téléchargement automatique."
+            "KIPART_FREECAD_CMD vers freecadcmd. Aucun téléchargement automatique.",
         )
     with tempfile.TemporaryDirectory(prefix="kipart-preview-") as directory:
         root = Path(directory)
@@ -366,25 +402,59 @@ def step_mesh(content: bytes) -> Mesh:
             XDG_CONFIG_HOME=str(root),
         )
         try:
-            # Logs go to a disposable file; no unbounded PIPE buffer in application memory.
-            with (root / "freecad.log").open("wb") as log:
+            args = [
+                command,
+                "-u",
+                str(root / "user.cfg"),
+                "-s",
+                str(root / "system.cfg"),
+                str(script),
+            ]
+            if cancel is None:
                 result = subprocess.run(
-                    [
-                        command,
-                        "-u",
-                        str(root / "user.cfg"),
-                        "-s",
-                        str(root / "system.cfg"),
-                        str(script),
-                    ],
+                    args,
                     cwd=root,
                     env=environment,
-                    stdout=log,
-                    stderr=log,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                     timeout=30,
                     check=False,
                 )
-            if result.returncode != 0 or not target.is_file():
+                returncode = result.returncode
+            else:
+                if os.name == "posix":
+                    environment["FABPARTS_BOUNDED_CONVERSION"] = "1"
+                # Inherit the sidecar process group / Windows job object so forced
+                # application shutdown also kills the external converter.
+                process = subprocess.Popen(
+                    args,
+                    cwd=root,
+                    env=environment,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                started = time.monotonic()
+                try:
+                    while process.poll() is None:
+                        if cancel.wait(0.05):
+                            raise PreviewProblem("cancelled", "Conversion STEP annulée.")
+                        if time.monotonic() - started > 30:
+                            raise PreviewProblem(
+                                "error", "Conversion STEP interrompue après 30 secondes."
+                            )
+                        if target.exists() and target.stat().st_size > MAX_OUTPUT:
+                            raise PreviewProblem("too_large", "Maillage STEP trop volumineux.")
+                    returncode = process.returncode
+                finally:
+                    if process.poll() is None:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=0.25)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=0.5)
+            if returncode != 0 or not target.is_file():
                 raise DomainError(
                     "FreeCAD n’a pas pu lire ce STEP ou le maillage dépasse les limites."
                 )
@@ -406,12 +476,30 @@ def step_mesh(content: bytes) -> Mesh:
                     "L’aperçu ne constitue pas une mesure ni une validation.",
                 ),
             )
-            return mesh
+            return replace(mesh, units="mm")
         except subprocess.TimeoutExpired as error:
             raise DomainError("Conversion STEP interrompue après 30 secondes.") from error
+        except DomainError:
+            raise
         except (OSError, ValueError, RecursionError) as error:
             raise DomainError("Moteur STEP indisponible ou maillage illisible.") from error
 
 
 def model_mesh(content: bytes) -> Mesh:
     return wrl_mesh(content) if content.lstrip().startswith(b"#VRML") else step_mesh(content)
+
+
+def convert_mesh(content: bytes, cancel: Event) -> tuple[bytes, dict[str, object]]:
+    from kipartmanager.infrastructure.mesh_geometry import encode_mesh
+
+    if len(content) > 16 * 1024 * 1024:
+        raise PreviewProblem("too_large", "Modèle 3D limité à 16 Mio.")
+    if cancel.is_set():
+        raise PreviewProblem("cancelled", "Conversion 3D annulée.")
+    if content.lstrip().startswith(b"#VRML"):
+        mesh = wrl_mesh(content, cancel)
+    elif content.lstrip().startswith(b"ISO-10303-21;"):
+        mesh = step_mesh(content, cancel)
+    else:
+        raise PreviewProblem("unsupported", "Format 3D non pris en charge : STEP ou VRML97 requis.")
+    return encode_mesh(mesh, cancel)

@@ -96,3 +96,25 @@ Le cache de quatre géométries est indexé par SHA/type/symbole et le hash du f
 est revérifié avant réutilisation. Zoom/couches/unités ne relancent pas le parseur.
 Une prévisualisation ne change jamais les qualifications. Voir le
 [checkpoint TECH-02A](../FABPARTS_2_TECH_02A.md) pour les bornes et preuves.
+
+## Extension TECH-02B — aperçus 3D interactifs
+
+`get_asset_preview(role=MODEL_3D)` résout le choix métier puis confie un snapshot
+vérifié à `ModelJobs`. Ce service applicatif possède un seul worker et deux jobs
+maximum ; il dépend du port `MeshConverter`, jamais de FreeCAD ou du filesystem.
+Le worker n'utilise pas le catalogue/SQLite. Le port est composé avec le parseur
+WRL existant et l'adaptateur FreeCAD externe dans `headless.py`.
+
+`get_model_status`, `read_mesh_chunk` et `release_model_preview` sont additifs à
+IPC v1. Le timeout des commandes reste 8 s ; seule la conversion externe dispose
+de 30 s, hors boucle de lecture IPC. Le résultat FPM1 est un snapshot binaire
+borné avec SHA-256, transféré en blocs de 64 Kio par handle de session, sans chemin
+fourni par la WebView. Registres PDF et 3D séparés ; annulation, expiration et
+redémarrage invalident les résultats. `PreviewBuffers` mutualise uniquement la
+mécanique de snapshots, pas les autorisations ni les quotas des deux types.
+
+Three.js/OrbitControls (MIT) rend le DTO neutre dans Svelte, à la demande. FreeCAD
+reste facultatif et externe ; WRL fonctionne sans lui. Aucun runtime CAO, Qt,
+service réseau ou droit filesystem WebView supplémentaire n'est embarqué.
+Les bornes, limitations géométriques et réserves multiplateformes sont détaillées
+dans [TECH-02B](../FABPARTS_2_TECH_02B.md).

@@ -151,3 +151,11 @@ stable et désactivent les contrôles de vue et les détails d’un aperçu non 
 
 A2 ne modifie ni SQLite, ni l’Asset Store, ni les choix de ressources, ni les
 publications. Comparaison structurée B et génération M12+ restent hors périmètre.
+
+## Tauri TECH-02B
+
+Le frontend Tauri connecte maintenant la carte 3D au même service de résolution
+readonly que les autres ressources. Voir le [rapport TECH-02B](FABPARTS_2_TECH_02B.md)
+pour le contrat FPM1, les jobs bornés, le corpus et la qualification native.
+Les commandes ne reçoivent jamais de chemin de modèle. FreeCAD externe est requis
+uniquement pour STEP ; les WRL sont lus localement sans cette dépendance.

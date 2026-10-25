@@ -9,6 +9,9 @@ fn main() {
             "get_asset_preview",
             "read_pdf_chunk",
             "release_preview",
+            "get_model_status",
+            "read_mesh_chunk",
+            "release_model_preview",
         ]),
     ))
     .expect("Tauri build configuration");

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-read-mesh-chunk"
+description = "Enables the read_mesh_chunk command without any pre-configured scope."
+commands.allow = ["read_mesh_chunk"]
+
+[[permission]]
+identifier = "deny-read-mesh-chunk"
+description = "Denies the read_mesh_chunk command without any pre-configured scope."
+commands.deny = ["read_mesh_chunk"]
