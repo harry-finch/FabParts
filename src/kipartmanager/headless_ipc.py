@@ -11,8 +11,12 @@ from uuid import UUID
 from kipartmanager import __version__
 from kipartmanager.application.asset_previews import AssetPreviews
 from kipartmanager.application.catalogue_reader import CatalogueReader
+from kipartmanager.application.ingestion import Ingestion
 from kipartmanager.domain.entities import DomainError, PartState
 from kipartmanager.infrastructure.readonly_catalogue import SCHEMA
+from kipartmanager.ingestion_ipc import FIELDS as INGESTION_METHODS
+from kipartmanager.ingestion_ipc import dispatch
+from kipartmanager.ingestion_ipc import validate as validate_ingestion
 from kipartmanager.ports.previews import PDF_LIMIT
 
 PROTOCOL_VERSION = 1
@@ -102,7 +106,11 @@ def validate_params(method: str, params: object) -> dict[str, Any]:
 
 
 def respond(
-    raw: bytes, reader: CatalogueReader, previews: AssetPreviews | None = None
+    raw: bytes,
+    reader: CatalogueReader,
+    previews: AssetPreviews | None = None,
+    ingestion: Ingestion | None = None,
+    schema: str = SCHEMA,
 ) -> dict[str, Any]:
     identity = None
     try:
@@ -125,6 +133,15 @@ def respond(
         method = request["method"]
         if not isinstance(method, str):
             raise ProtocolError("INVALID_REQUEST", "Nom de commande requis.")
+        if method in INGESTION_METHODS:
+            if ingestion is None:
+                raise ProtocolError("READ_ONLY", "Cette session est ouverte en lecture seule.")
+            try:
+                params = validate_ingestion(method, request["params"])
+            except (ValueError, TypeError) as error:
+                raise ProtocolError("INVALID_PARAMS", str(error)) from error
+            result = dispatch(ingestion, method, params)
+            return {"protocol_version": 1, "request_id": identity, "ok": True, "result": result}
         params = validate_params(method, request["params"])
         commands: dict[str, Callable[[], object]] = {
             "health": lambda: {
@@ -132,8 +149,8 @@ def respond(
                 "engine_version": __version__,
                 "protocol_version": 1,
                 "catalogue_available": True,
-                "schema": SCHEMA,
-                "read_only": True,
+                "schema": schema,
+                "read_only": ingestion is None,
                 "qt_loaded": any(k.startswith("PySide6") for k in sys.modules),
                 "pid": os.getpid(),
             },
@@ -179,6 +196,8 @@ def serve(
     source: BinaryIO,
     destination: BinaryIO,
     previews: AssetPreviews | None = None,
+    ingestion: Ingestion | None = None,
+    schema: str = SCHEMA,
 ) -> None:
     while raw := source.readline(MAX_REQUEST + 1):
         if len(raw) > MAX_REQUEST:
@@ -189,7 +208,7 @@ def serve(
         if not raw.endswith(b"\n"):
             response = error_response(None, "INVALID_REQUEST", "Message JSONL incomplet.")
         else:
-            response = respond(raw, reader, previews)
+            response = respond(raw, reader, previews, ingestion, schema)
         encoded = json.dumps(response, ensure_ascii=False, allow_nan=False).encode()
         if len(encoded) > MAX_RESPONSE:
             encoded = json.dumps(

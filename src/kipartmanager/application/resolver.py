@@ -34,6 +34,12 @@ class LocalResolver:
         owner = self.owner(type(owner), owner.id)
         if role not in allowed_roles(owner):
             raise DomainError("Rôle incompatible avec le composant ou package.")
+        return self.search_candidates(role, text, owner.asset_ids)
+
+    def search_candidates(
+        self, role: AssetType, text: str, associated_ids: tuple[UUID, ...] = ()
+    ) -> ResolutionResult:
+        """Search without creating a persistent owner (TECH-03 preparation)."""
         candidates = []
         query = text.strip().casefold()
         for asset in self.catalogue.list_entities(Asset):
@@ -41,7 +47,7 @@ class LocalResolver:
                 (asset.name, asset.source, asset.file.original_name if asset.file else "")
             ).casefold()
             if asset.asset_type != role or (
-                query not in searchable and asset.id not in owner.asset_ids
+                query not in searchable and asset.id not in associated_ids
             ):
                 continue
             unavailable = ""

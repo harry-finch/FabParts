@@ -5,7 +5,7 @@ from dataclasses import asdict
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import Engine, Table, delete, insert, select, text
+from sqlalchemy import Engine, Table, delete, insert, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -43,6 +43,7 @@ from kipartmanager.infrastructure.models import (
     package_assets,
     part_assets,
 )
+from kipartmanager.infrastructure.sessions import repository_session
 
 ROWS: dict[type[object], type[Base]] = {
     Part: PartRow,
@@ -56,11 +57,11 @@ ROWS: dict[type[object], type[Base]] = {
 
 
 class SqliteCatalogue:
-    def __init__(self, engine: Engine) -> None:
-        self.engine = engine
+    def __init__(self, engine: Engine, session: Session | None = None) -> None:
+        self.engine, self.session = engine, session
 
     def list_entities[T: Entity](self, kind: type[T]) -> list[T]:
-        with Session(self.engine) as session:
+        with repository_session(self.engine, self.session) as session:
             entities = [
                 cast(T, self._entity(session, row)) for row in session.scalars(select(ROWS[kind]))
             ]
@@ -69,14 +70,13 @@ class SqliteCatalogue:
             )
 
     def get[T: Entity](self, kind: type[T], identity: UUID) -> T | None:
-        with Session(self.engine) as session:
+        with repository_session(self.engine, self.session) as session:
             row = session.get(ROWS[kind], identity)
             return cast(T, self._entity(session, row)) if row is not None else None
 
     def save(self, entity: Entity) -> None:
         try:
-            with Session(self.engine) as session, session.begin():
-                session.execute(text("BEGIN IMMEDIATE"))
+            with repository_session(self.engine, self.session, write=True) as session:
                 self._save(session, entity)
         except IntegrityError as error:
             raise ConflictError(
@@ -87,7 +87,7 @@ class SqliteCatalogue:
 
     def seed_defaults(self, entities: tuple[Inventory | Collection, ...]) -> None:
         try:
-            with Session(self.engine) as session, session.begin():
+            with repository_session(self.engine, self.session, write=True) as session:
                 for entity in entities:
                     if session.get(ROWS[type(entity)], entity.id) is None:
                         self._save(session, entity)
@@ -271,7 +271,7 @@ class SqliteCatalogue:
         return ResourceChoice(AssetType(row.asset_type), row.asset_id, reference)
 
     def choices(self, owner: Part | Package) -> tuple[ResourceChoice, ...]:
-        with Session(self.engine) as session:
+        with repository_session(self.engine, self.session) as session:
             return tuple(
                 self._choice(row)
                 for row in session.scalars(
@@ -285,9 +285,7 @@ class SqliteCatalogue:
         self, owner: Part | Package, choice: ResourceChoice, expected: ResourceChoice | None
     ) -> None:
         try:
-            with Session(self.engine) as session, session.begin():
-                # Serialize SQLite writers before reading the expected choice.
-                session.execute(text("BEGIN IMMEDIATE"))
+            with repository_session(self.engine, self.session, write=True) as session:
                 owner_row = session.get(ROWS[type(owner)], owner.id)
                 if owner_row is None:
                     raise DomainError("Propriétaire introuvable.")
