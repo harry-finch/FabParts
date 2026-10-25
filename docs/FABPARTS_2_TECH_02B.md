@@ -198,14 +198,14 @@ restant, dossier supprimé. Ce harnais n'est ni distribué ni ajouté au dépôt
 
 Captures natives, données originales uniquement :
 
-- [WRL simple, quatre cartes](tech02b/wrl-box-dark.png)
-- [WRL multi-formes](tech02b/wrl-package-dark.png)
-- [STEP simple](tech02b/step-box-dark.png)
-- [STEP multi-solides clair](tech02b/step-package-light.png)
-- [Fenêtre étroite](tech02b/step-package-narrow.png)
-- [STEP avec détails fins et perçages](tech02b/step-details-light.png)
-- [WRL invalide, PDF préservé](tech02b/invalid-wrl-light.png)
-- [Convertisseur absent](tech02b/converter-missing.png)
+- [WRL simple, quatre cartes](tech02b/wrl-box-dark.jpg)
+- [WRL multi-formes](tech02b/wrl-package-dark.jpg)
+- [STEP simple](tech02b/step-box-dark.jpg)
+- [STEP multi-solides clair](tech02b/step-package-light.jpg)
+- [Fenêtre étroite](tech02b/step-package-narrow.jpg)
+- [STEP avec détails fins et perçages](tech02b/step-details-light.jpg)
+- [WRL invalide, PDF préservé](tech02b/invalid-wrl-light.jpg)
+- [Convertisseur absent](tech02b/converter-missing.jpg)
 
 ## Packaging et intégrité
 
