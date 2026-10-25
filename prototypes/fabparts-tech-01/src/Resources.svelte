@@ -1,6 +1,7 @@
 <!-- Vue de lecture : géométrie des quatre ressources UX 02, métadonnées réelles et aucun aperçu simulé. -->
 <script lang="ts">
 import { Box, Cpu, CircuitBoard, FileText, CircleDashed } from '@lucide/svelte';
+import AssetPreview from './AssetPreview.svelte';
 import type { Detail } from './controller';
 import { text as t, roles, roleLabel } from './text';
 let { detail }: { detail: Detail } = $props();
@@ -14,12 +15,12 @@ const icons = { SYMBOL:Cpu, FOOTPRINT:CircuitBoard, MODEL_3D:Box, DATASHEET:File
   {@const Icon = icons[role as keyof typeof icons]}
   <section class="resource">
     <header><span><Icon size={14}/>{roleLabel(role)}</span><span class="resource-state"><CircleDashed size={12}/>{t(present ? 'qualificationShort' : 'missing')}</span></header>
-    <div class="missing"><Icon size={28}/><span>{t('preview')}</span></div>
-    <div class="resource-meta">
+    {#if role === 'MODEL_3D'}<div class="missing"><Icon size={28}/><span>Prévisualisation 3D disponible dans une étape ultérieure</span></div>{:else}{#key detail.id}<AssetPreview {detail} {role}/>{/key}{/if}
+    {#if role === 'MODEL_3D'}<div class="resource-meta">
       {#each assets as asset}<strong>{asset.name}</strong><span>{t(asset.selected ? 'selected' : 'associated')} · {asset.origin}</span><span>{asset.file?.name || t('unknown')}</span>{/each}
       {#each external as selection}<strong>{selection.external?.library}:{selection.external?.name}</strong><span>{t('selected')} · {t('external')}</span>{/each}
       {#if !present}<span>{t('noResource')}</span>{/if}
-    </div>
+    </div>{/if}
   </section>
 {/each}
 </div>

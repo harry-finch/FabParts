@@ -247,3 +247,19 @@ cohérents ; annoncer l’absence d’illustration lorsqu’aucune fixture n’e
 La fiche À compléter offre « Reprendre la préparation » sur le même composant.
 Ces conventions concernent le prototype isolé, sans redéfinir les validations
 réelles du moteur ni modifier `UX_SPEC.md`.
+
+## Aperçus Tauri TECH-02A
+
+Les quatre cartes UX 02 sont conservées. La sélection métier est l’aperçu initial ;
+le menu « Aperçu » consulte une ressource associée sans la sélectionner en base.
+Les identités et origines affichées viennent du moteur. « Voir » / « Ouvrir »
+agrandissent la consultation avec retour à la fiche ; l’avertissement « ne constitue
+pas une validation » reste explicite. Le modèle 3D annonce une étape ultérieure.
+
+Le SVG utilise les jetons existants : cuivre/pads `--accent`, pad 1 `--accent-text`,
+sérigraphie `--text-primary`, fabrication `--info`, courtyard `--text-secondary`.
+Le perçage reprend `--bg-workspace` ; les numéros ont un contour de contraste.
+Ce code couleur décrit des couches, sans attribuer un statut de qualification.
+Les coordonnées sont en mm et les limites visibles viennent des primitives,
+jamais du nom d’un boîtier. Le zoom est centré et borné, avec recentrage ; le
+sélecteur unité/variante et les couches ne changent aucune donnée métier.

@@ -173,9 +173,24 @@ def pin(node: Node, warnings: set[str], offset: float) -> list[Primitive]:
     ):
         child = node.children_named(tag)
         if visible and child and child[0].atoms[1] not in {"", "~"}:
+            if "~{" in child[0].atoms[1] or "_{" in child[0].atoms[1] or "^{" in child[0].atoms[1]:
+                warnings.add(
+                    "Marquage de texte KiCad affiché littéralement (barres, indices, exposants)."
+                )
+            size = text_size(child[0], 0.9)
+            # Neutral DTO texts are centred. Position names inside the body using their
+            # estimated glyph extent instead of centring long names over the pin.
+            if tag == "name":
+                distance = offset + len(child[0].atoms[1]) * size * 0.32
+                location = (end[0] + dx * distance, end[1] + dy * distance)
             result.append(
                 Primitive(
-                    "text", (location,), "Pins", child[0].atoms[1], size=text_size(child[0], 0.9)
+                    "text",
+                    (location,),
+                    "Pins",
+                    child[0].atoms[1],
+                    size=size,
+                    angle=-90 if abs(dy) > 0.5 else 0,
                 )
             )
     if len(node.atoms) > 2 and node.atoms[2] != "line":
@@ -189,6 +204,12 @@ def pad(node: Node, warnings: set[str]) -> list[Primitive]:
     if len(node.atoms) < 4:
         raise DomainError("Pad incomplet.")
     number, shape = node.atoms[1], node.atoms[3]
+    layer_nodes = node.children_named("layers")
+    if layer_nodes and not {"F.Cu", "*.Cu"}.intersection(layer_nodes[0].atoms[1:]):
+        warnings.add(
+            f"Pad {number or 'mécanique'} hors cuivre avant non dessiné ; aperçu incomplet."
+        )
+        return []
     if shape not in {"rect", "roundrect", "circle", "oval"}:
         warnings.add(
             f"Pad {number or 'mécanique'} de forme {shape} non dessiné ; aperçu incomplet."
@@ -273,7 +294,9 @@ def footprint(tree: Node) -> Drawing:
     return Drawing(tree.atoms[1], 1, 1, tuple(primitives), tuple(sorted(warnings)))
 
 
-def symbols(tree: Node, selected: str) -> tuple[Drawing, ...]:
+def symbols(
+    tree: Node, selected: str, max_drawings: int = 2048, max_primitives: int = 100000
+) -> tuple[Drawing, ...]:
     entries: dict[str, Node] = {}
     for node in tree.children_named("symbol"):
         if len(node.atoms) != 2 or node.atoms[1] in entries:
@@ -282,6 +305,8 @@ def symbols(tree: Node, selected: str) -> tuple[Drawing, ...]:
     if selected and selected not in entries:
         raise DomainError("Symbole sélectionné absent du fichier.")
     result: list[Drawing] = []
+    total = 0
+    geometry_cost = 0
     for name in [selected] if selected else entries:
         chain: list[Node] = []
         current = name
@@ -301,7 +326,7 @@ def symbols(tree: Node, selected: str) -> tuple[Drawing, ...]:
                 units.append((int(match[1]), int(match[2]), unit))
         unit_ids = sorted({u for u, _, _ in units if u}) or [1]
         styles = sorted({s for _, s, _ in units if s}) or [1]
-        if len(unit_ids) * len(styles) + len(result) > 2048:
+        if len(unit_ids) * len(styles) + len(result) > max_drawings:
             raise DomainError("Trop d’unités ou de représentations pour cet aperçu.")
         for unit_id in unit_ids:
             for style in styles:
@@ -334,25 +359,44 @@ def symbols(tree: Node, selected: str) -> tuple[Drawing, ...]:
                             )
                         else:
                             warnings.add(f"Élément {tag} non affiché ; aperçu incomplet.")
+                geometry_cost += sum(len(p.points) + len(p.text) for p in primitives)
+                if geometry_cost > max_primitives * 20:
+                    raise DomainError("Géométrie ou textes trop complexes pour cet aperçu.")
+                total += len(primitives)
+                if total > max_primitives:
+                    raise DomainError("Trop d’éléments graphiques pour cet aperçu.")
                 result.append(
                     Drawing(name, unit_id, style, tuple(primitives), tuple(sorted(warnings)))
                 )
-                if len(result) > 2048:
+                if len(result) > max_drawings:
                     raise DomainError(
                         "Bibliothèque trop grande pour l’aperçu ; sélectionner un symbole."
                     )
     return tuple(result)
 
 
-def drawings(text: str, kind: AssetType, selected: str = "") -> tuple[Drawing, ...]:
+def drawings(
+    text: str,
+    kind: AssetType,
+    selected: str = "",
+    *,
+    max_drawings: int = 2048,
+    max_primitives: int = 100000,
+) -> tuple[Drawing, ...]:
     try:
         tree = parse(text)
         check_version(tree, kind is AssetType.SYMBOL)
-        result = symbols(tree, selected) if kind is AssetType.SYMBOL else (footprint(tree),)
+        result = (
+            symbols(tree, selected, max_drawings, max_primitives)
+            if kind is AssetType.SYMBOL
+            else (footprint(tree),)
+        )
         if not result:
             raise DomainError("Aucun symbole à afficher.")
-        if sum(len(d.primitives) for d in result) > 100000:
+        if sum(len(d.primitives) for d in result) > max_primitives:
             raise DomainError("Trop d’éléments graphiques pour cet aperçu.")
         return result
+    except DomainError:
+        raise
     except (IndexError, ValueError, OverflowError) as error:
         raise DomainError("Géométrie KiCad incomplète ou invalide.") from error

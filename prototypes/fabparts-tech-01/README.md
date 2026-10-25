@@ -1,4 +1,4 @@
-# FabParts TECH-01 / TECH-01B
+# FabParts TECH-01 / TECH-01B / TECH-02A
 
 Prototype local en lecture seule : Svelte 5 → Tauri 2 → sidecar Python JSONL →
 services existants → copie figée SQLite. UX 02 reste intact dans `../fabparts-ux`.
@@ -125,3 +125,22 @@ aucun catalogue ou aperçu de démonstration. Le mode natif nécessite une sessi
 graphique et des permissions de processus que certains bacs à sable interdisent.
 
 La validation native antérieure couvre macOS ARM64 uniquement. Les rapports et captures internes ne sont pas distribués ; les commandes ci-dessus permettent de reproduire les contrôles avec ses propres données de développement.
+
+## Real previews — TECH-02A
+
+Symbol and footprint drawings use the existing Python parser. PDFs use a locally
+bundled PDF.js worker, with CMaps/fonts copied by Vite. No Qt is needed in the
+sidecar. Run `npm ci` before building to install the locked PDF.js dependency.
+
+Create a **new disposable** catalogue with original redistributable test files:
+
+```sh
+PYTHONPATH=src .venv/bin/python -m tests.preview_corpus /tmp/fabparts-tech02-copy
+# Add --official only to also reference the installed KiCad NE555P and DIP-8.
+```
+
+Open the package and enter that directory in its copy selector. The script refuses
+an existing output directory and never opens production data. Use “Open details”
+to see the four resource cards. The preview menu inspects an association without
+changing the selected resource. See [TECH-02A](../../docs/FABPARTS_2_TECH_02A.md)
+for contracts, corpus, bounds, tests and native screenshots.

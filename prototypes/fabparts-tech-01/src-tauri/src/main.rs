@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod diagnostics;
 mod ipc;
+mod previews;
 
 use ipc::{Failure, Reply, STARTUP_TIMEOUT, TIMEOUT};
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,7 @@ struct Session {
     child: Option<CommandChild>,
     rx: Receiver<CommandEvent>,
     sequence: u64,
+    pdf_handles: std::collections::VecDeque<String>,
 }
 impl Session {
     async fn call(
@@ -127,6 +129,18 @@ impl Engine {
                 .map_err(|_| Failure::new("BUSY", "Le moteur est occupé."))
         })
         .await?;
+        if method == "read_pdf_chunk"
+            && !guard.as_ref().is_some_and(|s| {
+                s.pdf_handles
+                    .iter()
+                    .any(|h| Some(h.as_str()) == params["handle"].as_str())
+            })
+        {
+            return Err(Failure::new(
+                "INVALID_PARAMS",
+                "Aperçu PDF absent de cette session.",
+            ));
+        }
         let result = guard
             .as_mut()
             .ok_or_else(|| {
@@ -134,6 +148,17 @@ impl Engine {
             })?
             .call(method, params, TIMEOUT, self.closing.subscribe())
             .await;
+        if let (Ok(value), Some(session)) = (&result, guard.as_mut()) {
+            if method == "get_asset_preview" {
+                if let Some(handle) = value["handle"].as_str() {
+                    previews::handle(handle)?;
+                    while session.pdf_handles.len() >= 2 {
+                        session.pdf_handles.pop_front();
+                    }
+                    session.pdf_handles.push_back(handle.to_owned());
+                }
+            }
+        }
         if let Err(error) = &result {
             if !matches!(
                 error.code.as_str(),
@@ -172,6 +197,26 @@ async fn list_components(engine: State<'_, Engine>, query: ListQuery) -> Reply {
 #[tauri::command]
 async fn get_component(engine: State<'_, Engine>, id: String) -> Reply {
     engine.call("get_component", json!({"id":id})).await
+}
+#[tauri::command]
+async fn get_asset_preview(engine: State<'_, Engine>, query: previews::PreviewQuery) -> Reply {
+    query.validate()?;
+    engine.call("get_asset_preview", json!(query)).await
+}
+#[tauri::command]
+async fn read_pdf_chunk(engine: State<'_, Engine>, handle: String, offset: u32) -> Reply {
+    previews::handle(&handle)?;
+    previews::offset(offset)?;
+    engine
+        .call("read_pdf_chunk", json!({"handle":handle,"offset":offset}))
+        .await
+}
+#[tauri::command]
+async fn release_preview(engine: State<'_, Engine>, handle: String) -> Reply {
+    previews::handle(&handle)?;
+    engine
+        .call("release_preview", json!({"handle":handle}))
+        .await
 }
 #[tauri::command]
 async fn restart_engine(
@@ -252,6 +297,7 @@ async fn restart_session(
         child: Some(child),
         rx,
         sequence: 0,
+        pdf_handles: Default::default(),
     };
     let result = session
         .call(
@@ -298,7 +344,10 @@ fn main() {
             list_libraries,
             list_components,
             get_component,
-            restart_engine
+            restart_engine,
+            get_asset_preview,
+            read_pdf_chunk,
+            release_preview
         ])
         .build(tauri::generate_context!())
         .expect("FabParts TECH-01 startup");

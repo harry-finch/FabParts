@@ -581,3 +581,12 @@ Seule une copie explicitement choisie, figée et compatible est ouverte en lectu
 seule ; aucune migration, indexation ni initialisation de l’Asset Store.
 Voir [ADR 0002](adr/0002-headless-readonly-sidecar.md). Aucun workflow d’écriture supplémentaire
 n’est autorisé par ce prototype.
+
+## Aperçus du frontend Tauri TECH-02A
+
+Le sidecar compose `AssetPreviews` et `ReadonlyPreviews` autour du port `PreviewReader`
+et du service `Previews` historiques. Les primitives KiCad traversent JSONL v1 et
+s’affichent en SVG Svelte. Les PDF utilisent des snapshots mémoire à handles bornés,
+un transfert par blocs et PDF.js local dans un worker. Qt reste absent du processus
+headless. Les frontières et limites sont décrites dans
+[l’extension de l’ADR 0002](adr/0002-headless-readonly-sidecar.md#extension-tech-02a--25-octobre-2026).
