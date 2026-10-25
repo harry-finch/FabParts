@@ -7,9 +7,11 @@ from pathlib import Path
 from kipartmanager.application.asset_previews import AssetPreviews
 from kipartmanager.application.catalogue import Catalogue
 from kipartmanager.application.catalogue_reader import CatalogueReader
+from kipartmanager.application.model_jobs import ModelJobs
 from kipartmanager.headless_ipc import serve
 from kipartmanager.infrastructure.catalogue import SqliteCatalogue
 from kipartmanager.infrastructure.documentation import SqliteDocumentation
+from kipartmanager.infrastructure.model_preview import convert_mesh
 from kipartmanager.infrastructure.readonly_catalogue import open_copy
 from kipartmanager.infrastructure.readonly_previews import ReadonlyPreviews
 
@@ -26,7 +28,9 @@ def main() -> int:
     try:
         repository = SqliteCatalogue(engine)
         reader = CatalogueReader(Catalogue(repository), repository, SqliteDocumentation(engine))
-        previews = AssetPreviews(reader, ReadonlyPreviews(arguments.data_dir))
+        previews = AssetPreviews(
+            reader, ReadonlyPreviews(arguments.data_dir), ModelJobs(convert_mesh)
+        )
         try:
             serve(reader, sys.stdin.buffer, sys.stdout.buffer, previews)
         finally:

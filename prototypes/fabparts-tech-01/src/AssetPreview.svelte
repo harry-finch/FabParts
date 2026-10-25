@@ -5,18 +5,19 @@ import type { Detail } from './controller';
 import { PreviewController, type Preview } from './preview';
 import DrawingView from './DrawingView.svelte';
 import PdfView from './PdfView.svelte';
+import ModelView from './ModelView.svelte';
 let { detail, role }: {detail:Detail;role:string}=$props();
 let value=$state<Preview>({status:'loading'}), assetId=$state(''), dialog:HTMLDialogElement, large=$state(false);
 let candidates=$derived([...detail.associated_assets.filter(a=>a.type===role).map(a=>({id:a.id,name:a.name})), ...(role==='DATASHEET'?detail.documents.filter(d=>!detail.associated_assets.some(a=>a.id===d.asset_id)).map(d=>({id:d.asset_id,name:d.title})):[])]);
 const controller=new PreviewController(invoke,p=>value=p);
 $effect(()=>{void controller.load(detail.id,role,assetId);return ()=>controller.dispose();});
 function enlarge(){large=true;dialog.showModal();}function close(){large=false;dialog.close();}
-const labels:Record<string,string>={loading:'Chargement…',absent:'Aucune ressource sélectionnée',missing:'Ressource introuvable',inaccessible:'Ressource inaccessible',unsupported:'Format non pris en charge',too_large:'Aperçu hors limites',error:'Erreur de lecture'};
+const labels:Record<string,string>={loading:'Chargement…',absent:'Aucune ressource sélectionnée',missing:'Ressource introuvable',inaccessible:'Ressource inaccessible',unsupported:'Format non pris en charge',too_large:'Aperçu hors limites',error:'Erreur de lecture',converter_missing:'Convertisseur STEP indisponible',cancelled:'Conversion annulée'};
 </script>
 {#if candidates.length}<label class="candidate">Aperçu <select bind:value={assetId}><option value="">Sélection courante</option>{#each candidates as c}<option value={c.id}>{c.name} · associé</option>{/each}</select></label>{/if}
 {#snippet content(expanded:boolean)}
-{#if value.status==='ready'}{#if value.drawings?.length}<DrawingView drawings={value.drawings} large={expanded}/>{:else if value.bytes}<PdfView bytes={value.bytes} large={expanded}/>{/if}
-{:else}<div class="empty" role="status"><strong>{labels[value.status] || 'Aperçu indisponible'}</strong>{#if value.message}<span>{value.message}</span>{/if}</div>{/if}
+{#if value.status==='ready'}{#if value.mesh}<ModelView mesh={value.mesh} large={expanded}/>{:else if value.drawings?.length}<DrawingView drawings={value.drawings} large={expanded}/>{:else if value.bytes}<PdfView bytes={value.bytes} large={expanded}/>{/if}
+{:else}<div class="empty" role="status"><strong>{value.status==='loading'&&role==='MODEL_3D'?'Chargement du modèle…':labels[value.status] || 'Aperçu indisponible'}</strong>{#if value.message}<span>{value.message}</span>{/if}</div>{/if}
 {/snippet}
 {#if !large}{@render content(false)}{/if}
 {#if value.status==='ready'}<div class="actions"><span>{value.selected?'Sélection courante':'Ressource associée · non sélectionnée'}</span><button class="btn quiet" onclick={enlarge}><Maximize2 size={13}/>{role==='DATASHEET'?'Ouvrir':'Voir'}</button></div><p class="provenance">{value.name} · {value.storage==='managed'?'Asset Store FabParts':'Référence KiCad'} · {value.origin}</p>

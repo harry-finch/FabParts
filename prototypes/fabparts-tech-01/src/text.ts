@@ -1,5 +1,11 @@
 import { i18n } from '../../fabparts-ux/src/lib/i18n.svelte';
 const fr = {
+  modelPan:'Déplacer le modèle',modelView:'Vue',modelIso:'Isométrique',modelTop:'Dessus',modelBottom:'Dessous',modelFront:'Face',modelBack:'Arrière',
+  modelZoomOut:'Zoom arrière 3D',modelZoomIn:'Zoom avant 3D',modelFit:'Cadrer le modèle',modelCanvas:'Aperçu 3D interactif',
+  modelHelp:'Glisser : rotation · clic droit ou Maj + glisser : pan · molette : zoom',
+  modelMillimetres:'Coordonnées en mm, sans valeur de mesure certifiée',modelSourceUnits:'WRL : unités du fichier, échelle physique non déduite',
+  modelContextLost:'Contexte WebGL perdu. Rouvrez l’aperçu si la restauration échoue.',modelWebglUnavailable:'Rendu WebGL indisponible sur cette machine.',
+
   qualificationShort:'Non évaluée',
   copyDirectory:'Dossier de la copie TECH-01',
   copy:'Copie du catalogue · lecture seule', all:'Tous les composants', libraries:'Bibliothèques', categories:'Catégories',
@@ -19,6 +25,12 @@ const fr = {
   resize:'Redimensionner les détails', results:'résultat(s)', source:'Origine', file:'Fichier', hash:'SHA-256',
 };
 const en: Record<keyof typeof fr,string> = {
+  modelPan:'Pan model',modelView:'View',modelIso:'Isometric',modelTop:'Top',modelBottom:'Bottom',modelFront:'Front',modelBack:'Back',
+  modelZoomOut:'Zoom out 3D',modelZoomIn:'Zoom in 3D',modelFit:'Fit model',modelCanvas:'Interactive 3D preview',
+  modelHelp:'Drag: orbit · right button or Shift + drag: pan · wheel: zoom',
+  modelMillimetres:'Coordinates in mm, not certified measurements',modelSourceUnits:'WRL: source units, physical scale not inferred',
+  modelContextLost:'WebGL context lost. Reopen the preview if restoration fails.',modelWebglUnavailable:'WebGL rendering is unavailable on this machine.',
+
   qualificationShort:'Not evaluated',
   copyDirectory:'TECH-01 copy directory',
   copy:'Catalogue copy · read only',all:'All components',libraries:'Libraries',categories:'Categories',allCategories:'All categories',

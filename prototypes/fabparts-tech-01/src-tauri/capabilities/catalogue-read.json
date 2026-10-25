@@ -13,6 +13,9 @@
     "allow-restart-engine",
     "allow-get-asset-preview",
     "allow-read-pdf-chunk",
-    "allow-release-preview"
+    "allow-release-preview",
+    "allow-get-model-status",
+    "allow-read-mesh-chunk",
+    "allow-release-model-preview"
   ]
 }

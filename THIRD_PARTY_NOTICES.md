@@ -17,7 +17,13 @@ The [machine-readable inventory](docs/DEPENDENCY_LICENSES.json) records 30 exter
 | FabParts / KiPart Manager / FabApps branding | Canonical SVGs under `src/kipartmanager/ui/branding/source/`, generated icons, `logo/`, prototype logos and starter logo | The [branding record](docs/BRANDING.md) records the owner-supplied, approved canonical logo. GIT-04 retains validated branding in the personal project’s public scope. The software license does not grant trademark rights. |
 | Screenshots and demonstrations | `docs/images/`, `prototypes/fabparts-ux/screenshots/`, test and prototype fixtures | Historical development screenshots are excluded. TECH-02A captures in `docs/tech02a/` show only the original synthetic corpus or installed KiCad reference geometry; no production catalogue. Any future screenshots need explicit privacy/provenance review. Generic test data and simulated CAD drawings are not a license to redistribute third-party CAD or datasheets. |
 
-The TECH-02A frontend build includes the notices from `third_party/licenses/`, including Inter, Lucide and PDF.js. The historical desktop package has its own packaging path; before distributing it, check that matching notices accompany its embedded resources.
+The TECH-02B frontend adds Three.js 0.186.1 (MIT), including OrbitControls.
+Its exact license is preserved in [Three-MIT.txt](third_party/licenses/Three-MIT.txt).
+FreeCAD remains an optional externally installed converter; no FreeCAD or OCCT binary
+is redistributed by FabParts. The original STEP/WRL corpus under `tests/fixtures/models`
+is GPL-3.0-or-later; its generators and provenance are documented beside the files.
+
+The TECH-02B frontend build includes the notices from `third_party/licenses/`, including Inter, Lucide and PDF.js. The historical desktop package has its own packaging path; before distributing it, check that matching notices accompany its embedded resources.
 
 The Tauri frontend directly imports CSS, components and modules from the GPL-declared UX package. The GPL-3.0-or-later project decision is consistent with this reuse. Removing the UX folder without replacing these dependencies would break its build.
 
@@ -39,7 +45,7 @@ Svelte and Vite declare MIT, TypeScript Apache-2.0, and the locked Tauri API/CLI
 
 ## KiCad, manufacturer data and SnapMagic
 
-No standalone `.kicad_sym`, `.kicad_mod`, STEP/WRL or datasheet PDF is included in the inspected publishable source set/history. Test files construct minimal examples; catalogue references to external KiCad resources do not copy those libraries into this repository. User Asset Stores and catalogue copies remain outside the candidate history.
+TECH-02A and TECH-02B include original synthetic KiCad, PDF and STEP/WRL test fixtures under `tests/fixtures/`; their provenance is documented locally. No manufacturer assets are bundled; catalogue references to external KiCad resources do not copy those libraries into this repository. User Asset Stores and catalogue copies remain outside the candidate history.
 
 Official KiCad library collections use **CC BY-SA 4.0 with a design exception**. The exception permits use in designs; redistribution of a library collection or part of it still requires the applicable attribution and license. Verify per-file notices, including 3D models, before adding any library material. See [KiCad's library license](https://www.kicad.org/libraries/license/).
 

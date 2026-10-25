@@ -22,6 +22,7 @@ struct Session {
     rx: Receiver<CommandEvent>,
     sequence: u64,
     pdf_handles: std::collections::VecDeque<String>,
+    model_handles: std::collections::VecDeque<String>,
 }
 impl Session {
     async fn call(
@@ -129,6 +130,18 @@ impl Engine {
                 .map_err(|_| Failure::new("BUSY", "Le moteur est occupé."))
         })
         .await?;
+        if ["get_model_status", "read_mesh_chunk"].contains(&method)
+            && !guard.as_ref().is_some_and(|s| {
+                s.model_handles
+                    .iter()
+                    .any(|h| Some(h.as_str()) == params["handle"].as_str())
+            })
+        {
+            return Err(Failure::new(
+                "INVALID_PARAMS",
+                "Session 3D absente de ce moteur.",
+            ));
+        }
         if method == "read_pdf_chunk"
             && !guard.as_ref().is_some_and(|s| {
                 s.pdf_handles
@@ -157,22 +170,40 @@ impl Engine {
         params: &Value,
         result: Reply,
     ) -> Reply {
+        if method == "get_model_status" {
+            if let Ok(value) = &result {
+                if let Err(error) = previews::mesh_descriptor(value) {
+                    guard.take();
+                    return Err(error);
+                }
+            }
+        }
         if let (Ok(value), Some(session)) = (&result, guard.as_mut()) {
             if method == "get_asset_preview" {
                 if let Some(handle) = value["handle"].as_str() {
                     previews::handle(handle)?;
-                    while session.pdf_handles.len() >= 2 {
-                        session.pdf_handles.pop_front();
+                    let handles = if value["kind"] == "MODEL_3D" {
+                        &mut session.model_handles
+                    } else {
+                        &mut session.pdf_handles
+                    };
+                    while handles.len() >= 2 {
+                        handles.pop_front();
                     }
-                    session.pdf_handles.push_back(handle.to_owned());
+                    handles.push_back(handle.to_owned());
                 }
-            } else if method == "release_preview" && value["released"].as_bool() == Some(true) {
+            } else if ["release_preview", "release_model_preview"].contains(&method)
+                && value["released"].as_bool() == Some(true)
+            {
                 if let Some(handle) = params["handle"].as_str() {
                     // Releases can arrive out of creation order. Remove only the
                     // acknowledged handle so the next preview cannot evict a live one.
-                    session
-                        .pdf_handles
-                        .retain(|registered| registered != handle);
+                    let handles = if method == "release_model_preview" {
+                        &mut session.model_handles
+                    } else {
+                        &mut session.pdf_handles
+                    };
+                    handles.retain(|registered| registered != handle);
                 }
             }
         }
@@ -236,6 +267,28 @@ async fn release_preview(engine: State<'_, Engine>, handle: String) -> Reply {
         .await
 }
 #[tauri::command]
+async fn get_model_status(engine: State<'_, Engine>, handle: String) -> Reply {
+    previews::handle(&handle)?;
+    engine
+        .call("get_model_status", json!({"handle":handle}))
+        .await
+}
+#[tauri::command]
+async fn read_mesh_chunk(engine: State<'_, Engine>, handle: String, offset: u32) -> Reply {
+    previews::handle(&handle)?;
+    previews::offset(offset)?;
+    engine
+        .call("read_mesh_chunk", json!({"handle":handle,"offset":offset}))
+        .await
+}
+#[tauri::command]
+async fn release_model_preview(engine: State<'_, Engine>, handle: String) -> Reply {
+    previews::handle(&handle)?;
+    engine
+        .call("release_model_preview", json!({"handle":handle}))
+        .await
+}
+#[tauri::command]
 async fn restart_engine(
     app: tauri::AppHandle,
     engine: State<'_, Engine>,
@@ -293,7 +346,7 @@ async fn restart_session(
             "Le dossier de la copie est introuvable.",
         ));
     }
-    let command = app
+    let mut command = app
         .shell()
         .sidecar("fabparts-engine")
         .map_err(|_| Failure::new("LAUNCH_FAILED", "Sidecar absent du paquet."))?
@@ -302,6 +355,10 @@ async fn restart_session(
         .env("TMPDIR", std::env::temp_dir())
         .set_raw_out(true)
         .set_process_group(true);
+    // Optional local converter chosen by the launching user, never by the WebView.
+    if let Some(path) = std::env::var_os("KIPART_FREECAD_CMD") {
+        command = command.env("KIPART_FREECAD_CMD", path);
+    }
     let (rx, child) = command
         .spawn()
         .map_err(|_| Failure::new("LAUNCH_FAILED", "Impossible de lancer le moteur embarqué."))?;
@@ -315,6 +372,7 @@ async fn restart_session(
         rx,
         sequence: 0,
         pdf_handles: Default::default(),
+        model_handles: Default::default(),
     };
     let result = session
         .call(
@@ -364,7 +422,10 @@ fn main() {
             restart_engine,
             get_asset_preview,
             read_pdf_chunk,
-            release_preview
+            release_preview,
+            get_model_status,
+            read_mesh_chunk,
+            release_model_preview
         ])
         .build(tauri::generate_context!())
         .expect("FabParts TECH-01 startup");
@@ -394,6 +455,7 @@ mod tests {
             rx,
             sequence: 0,
             pdf_handles: Default::default(),
+            model_handles: Default::default(),
         }
     }
     fn issue(session: &mut Option<Session>, handle: &str) {
@@ -422,6 +484,96 @@ mod tests {
             .iter()
             .map(String::as_str)
             .collect()
+    }
+
+    fn issue_model(session: &mut Option<Session>, handle: &str) {
+        Engine::finish_call(
+            session,
+            "get_asset_preview",
+            &json!({}),
+            Ok(json!({"status":"loading", "kind":"MODEL_3D", "handle":handle})),
+        )
+        .unwrap();
+    }
+    #[test]
+    fn models_release_out_of_order_and_keep_pdf_authority_separate() {
+        let (h1, h2, h3) = ("a".repeat(48), "b".repeat(48), "c".repeat(48));
+        let mut session = Some(empty_session());
+        issue(&mut session, &h1);
+        issue_model(&mut session, &h1);
+        issue_model(&mut session, &h2);
+        Engine::finish_call(
+            &mut session,
+            "release_model_preview",
+            &json!({"handle":h2}),
+            Ok(json!({"released":true})),
+        )
+        .unwrap();
+        issue_model(&mut session, &h3);
+        assert_eq!(
+            session.as_ref().unwrap().model_handles,
+            [h1.clone(), h3.clone()]
+        );
+        assert_eq!(handles(&session), [h1.as_str()]);
+        for reply in [
+            Err(Failure::new("DOMAIN_ERROR", "expired")),
+            Ok(json!({"released":false})),
+        ] {
+            let _ = Engine::finish_call(
+                &mut session,
+                "release_model_preview",
+                &json!({"handle":h1}),
+                reply,
+            );
+            assert_eq!(
+                session.as_ref().unwrap().model_handles,
+                [h1.clone(), h3.clone()]
+            );
+        }
+        let _ = Engine::finish_call(
+            &mut session,
+            "get_model_status",
+            &json!({"handle":h1}),
+            Ok(json!({"status":"ready","size_bytes":17000000})),
+        );
+        assert!(session.is_none());
+    }
+    #[test]
+    fn stale_model_handles_cannot_cross_restart_or_pdf_registry() {
+        tauri::async_runtime::block_on(async {
+            let handle = "a".repeat(48);
+            let mut session = Some(empty_session());
+            issue(&mut session, &handle);
+            let (closing, _) = watch::channel(false);
+            let engine = Engine {
+                data_dir: Mutex::new(None),
+                session: Mutex::new(session),
+                closing,
+            };
+            for method in ["get_model_status", "read_mesh_chunk"] {
+                assert_eq!(
+                    engine
+                        .call(method, json!({"handle":handle,"offset":0}))
+                        .await
+                        .unwrap_err()
+                        .code,
+                    "INVALID_PARAMS"
+                );
+            }
+            let mut guard = engine.session.lock().await;
+            issue_model(&mut guard, &handle);
+            guard.take().unwrap().stop().await;
+            *guard = Some(empty_session());
+            drop(guard);
+            assert_eq!(
+                engine
+                    .call("get_model_status", json!({"handle":handle}))
+                    .await
+                    .unwrap_err()
+                    .code,
+                "INVALID_PARAMS"
+            );
+        });
     }
 
     #[test]

@@ -1,7 +1,8 @@
 """Read-only preview snapshots and presentation-neutral drawing primitives."""
 
 from dataclasses import dataclass
-from typing import Protocol
+from threading import Event
+from typing import Any, Protocol
 
 from kipartmanager.domain.asset_files import AssetFile
 from kipartmanager.domain.entities import DomainError
@@ -35,6 +36,8 @@ class Mesh:
     faces: tuple[tuple[int, ...], ...]
     colors: tuple[tuple[float, float, float], ...]
     warnings: tuple[str, ...] = ()
+    units: str = "source"
+    double_sided: tuple[bool, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,7 @@ class PreviewContent:
     drawings: tuple[Drawing, ...] = ()
     pdf: bytes = b""
     mesh: Mesh | None = None
+    model_source: bytes = b""
 
 
 class PreviewReader(Protocol):
@@ -60,3 +64,7 @@ class PreviewProblem(DomainError):
     def __init__(self, status: str, message: str) -> None:
         super().__init__(message)
         self.status = status
+
+
+class MeshConverter(Protocol):
+    def __call__(self, source: bytes, cancel: Event, /) -> tuple[bytes, dict[str, Any]]: ...

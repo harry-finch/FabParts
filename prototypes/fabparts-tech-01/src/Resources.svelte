@@ -15,12 +15,7 @@ const icons = { SYMBOL:Cpu, FOOTPRINT:CircuitBoard, MODEL_3D:Box, DATASHEET:File
   {@const Icon = icons[role as keyof typeof icons]}
   <section class="resource">
     <header><span><Icon size={14}/>{roleLabel(role)}</span><span class="resource-state"><CircleDashed size={12}/>{t(present ? 'qualificationShort' : 'missing')}</span></header>
-    {#if role === 'MODEL_3D'}<div class="missing"><Icon size={28}/><span>Prévisualisation 3D disponible dans une étape ultérieure</span></div>{:else}{#key detail.id}<AssetPreview {detail} {role}/>{/key}{/if}
-    {#if role === 'MODEL_3D'}<div class="resource-meta">
-      {#each assets as asset}<strong>{asset.name}</strong><span>{t(asset.selected ? 'selected' : 'associated')} · {asset.origin}</span><span>{asset.file?.name || t('unknown')}</span>{/each}
-      {#each external as selection}<strong>{selection.external?.library}:{selection.external?.name}</strong><span>{t('selected')} · {t('external')}</span>{/each}
-      {#if !present}<span>{t('noResource')}</span>{/if}
-    </div>{/if}
+    {#key detail.id}<AssetPreview {detail} {role}/>{/key}
   </section>
 {/each}
 </div>
@@ -31,9 +26,5 @@ const icons = { SYMBOL:Cpu, FOOTPRINT:CircuitBoard, MODEL_3D:Box, DATASHEET:File
 header{min-height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--s3);border-bottom:1px solid var(--divider);gap:8px;flex-wrap:wrap}
 header span{display:flex;align-items:center;gap:8px;font-size:var(--fs-sm);font-weight:600}
 header .resource-state{gap:4px;font-size:var(--fs-xs);font-weight:400;color:var(--text-secondary)}
-.missing{height:144px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:8px;text-align:center;color:var(--text-secondary);background:var(--bg-workspace);font-size:var(--fs-xs)}
-.resource-meta{display:flex;flex-direction:column;gap:4px;padding:8px 12px;font-size:var(--fs-xs);color:var(--text-secondary);overflow-wrap:anywhere}
-.resource-meta strong{font-size:var(--fs-sm);font-weight:500;color:var(--text-primary)}
-@media (min-width:1650px){.missing{height:184px}}
 @media (max-width:750px){.resources-grid{grid-template-columns:1fr}}
 </style>

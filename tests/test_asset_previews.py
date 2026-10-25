@@ -76,7 +76,10 @@ def test_business_resolution_geometry_pdf_and_immutability(
             previews.get(str(ids["01 Simple DIP"]), "SYMBOL", str(uuid4()))["status"]
             == "inaccessible"
         )
-        selected = reader.catalogue.require(Part, ids["01 Simple DIP"]).asset_ids[0]
+        part = reader.catalogue.require(Part, ids["01 Simple DIP"])
+        selected = next(
+            c.asset_id for c in reader.repository.choices(part) if c.asset_type is AssetType.SYMBOL
+        )
         assert previews.get(str(ids["01 Simple DIP"]), "SYMBOL", str(selected))["selected"]
         broken = reader.catalogue.require(Part, ids["08 Invalid files"])
         associated_id = next(

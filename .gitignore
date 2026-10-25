@@ -62,3 +62,4 @@ coverage.xml
 
 # Public TECH-02A checkpoint (historical internal reports remain excluded).
 !/docs/FABPARTS_2_TECH_02A.md
+!/docs/FABPARTS_2_TECH_02B.md

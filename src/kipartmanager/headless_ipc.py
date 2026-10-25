@@ -44,6 +44,9 @@ def validate_params(method: str, params: object) -> dict[str, Any]:
         "get_asset_preview": {"id", "role", "asset_id"},
         "read_pdf_chunk": {"handle", "offset"},
         "release_preview": {"handle"},
+        "get_model_status": {"handle"},
+        "read_mesh_chunk": {"handle", "offset"},
+        "release_model_preview": {"handle"},
         "list_components": {"library", "search", "limit", "offset", "category", "package", "state"},
     }
     if method not in fields:
@@ -51,7 +54,7 @@ def validate_params(method: str, params: object) -> dict[str, Any]:
     if not isinstance(params, dict) or set(params) - fields[method]:
         raise ProtocolError("INVALID_PARAMS", "Paramètres non reconnus.")
     for key, value in params.items():
-        if method == "read_pdf_chunk" and key == "offset":
+        if method in {"read_pdf_chunk", "read_mesh_chunk"} and key == "offset":
             valid = type(value) is int and 0 <= value < PDF_LIMIT and value % 65536 == 0
         elif key in {"limit", "offset"}:
             bounds = (1, 100) if key == "limit" else (0, 1000000)
@@ -85,11 +88,15 @@ def validate_params(method: str, params: object) -> dict[str, Any]:
         "MODEL_3D",
     }:
         raise ProtocolError("INVALID_PARAMS", "Rôle de ressource requis.")
-    if method in {"read_pdf_chunk", "release_preview"} and not re.fullmatch(
-        r"[0-9a-f]{48}", params.get("handle", "")
-    ):
+    if method in {
+        "read_pdf_chunk",
+        "release_preview",
+        "read_mesh_chunk",
+        "get_model_status",
+        "release_model_preview",
+    } and not re.fullmatch(r"[0-9a-f]{48}", params.get("handle", "")):
         raise ProtocolError("INVALID_PARAMS", "Handle PDF invalide.")
-    if method == "read_pdf_chunk" and "offset" not in params:
+    if method in {"read_pdf_chunk", "read_mesh_chunk"} and "offset" not in params:
         raise ProtocolError("INVALID_PARAMS", "Position de bloc requise.")
     return params
 
@@ -141,6 +148,15 @@ def respond(
                     "get_asset_preview": lambda: previews.get(**params),
                     "read_pdf_chunk": lambda: previews.chunk(**params),
                     "release_preview": lambda: previews.release(**params),
+                }
+            )
+        if previews is not None and previews.models is not None:
+            models = previews.models
+            commands.update(
+                {
+                    "get_model_status": lambda: models.status(**params),
+                    "read_mesh_chunk": lambda: models.chunk(**params),
+                    "release_model_preview": lambda: models.release(**params),
                 }
             )
         if method not in commands:
