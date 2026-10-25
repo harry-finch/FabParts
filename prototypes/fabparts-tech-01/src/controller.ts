@@ -15,7 +15,7 @@ export type Selection = { type: string; owner: string; asset_id: string | null;
 export type Detail = Component & { associated_assets: Asset[]; selections: Selection[];
   documents: { id: string; asset_id: string; title: string; revision: string; language: string; date: string; kind: string }[];
   qualification: null; preview_available: false };
-export type Health = { status: string; engine_version: string; protocol_version: number; read_only: boolean; qt_loaded: boolean; schema: string; pid: number };
+export type Health = { workspace_mode?: "personal"|"sandbox"|"readonly"; status: string; engine_version: string; protocol_version: number; read_only: boolean; qt_loaded: boolean; schema: string; pid: number };
 export type Query = { library: string; search: string; category: string; package: string; state: string; limit: number; offset: number };
 export const defaultQuery = (): Query => ({library:'all',search:'',category:'',package:'',state:'',limit:50,offset:0});
 export type Page = { components: Component[]; total: number; offset: number; limit: number; facets: { categories: string[]; packages: string[] } };

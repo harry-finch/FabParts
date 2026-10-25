@@ -590,3 +590,17 @@ s’affichent en SVG Svelte. Les PDF utilisent des snapshots mémoire à handles
 un transfert par blocs et PDF.js local dans un worker. Qt reste absent du processus
 headless. Les frontières et limites sont décrites dans
 [l’extension de l’ADR 0002](adr/0002-headless-readonly-sidecar.md#extension-tech-02a--25-octobre-2026).
+
+## TECH-04A — Espace personnel
+
+Le host Tauri ouvre normalement le workspace système FabParts via `--personal`.
+Les chemins writable restent définis côté host. Le mode explicite readonly et le
+sandbox TECH-03 conservent leurs frontières. `headless.py` compose les services
+existants et injecte l'initialisation Catalogue à `user_workspace.py`, sans
+introduire de dépendance Infrastructure → Application.
+
+`user_workspace.py` gère le verrou, le marqueur, le pointeur de génération et les
+migrations contrôlées. `workspace_backup.py` fournit l'unique implémentation de
+snapshot complet et de vérification, réutilisée par le sandbox. Rust acquiert la
+source de restauration par sélecteur natif et limite les capacités à la session.
+Voir [ADR 0004](adr/0004-personal-workspace-and-verified-backups.md).

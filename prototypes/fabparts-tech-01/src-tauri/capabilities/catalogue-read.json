@@ -18,6 +18,10 @@
     "allow-read-mesh-chunk",
     "allow-release-model-preview",
     "allow-ingestion-command",
-    "allow-choose-ingestion-files"
+    "allow-choose-ingestion-files",
+    "allow-workspace-info",
+    "allow-backup-workspace",
+    "allow-choose-workspace-backup",
+    "allow-restore-workspace"
   ]
 }

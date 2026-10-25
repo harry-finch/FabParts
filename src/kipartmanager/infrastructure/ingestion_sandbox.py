@@ -3,7 +3,6 @@
 import json
 import os
 import shutil
-import sqlite3
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -75,24 +74,38 @@ def prepare_database(path: Path) -> Engine:
 
 
 def restore_backup(backup: Path, destination: Path) -> Engine:
-    """Host-only recovery into a NEW directory, retaining the source backup."""
-    source = backup.expanduser().absolute()
-    if source != source.resolve(strict=True):
-        raise DomainError("Sauvegarde avec lien symbolique refusée.")
-    check_tree(source)
-    database = source / "catalogue.sqlite3"
-    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
-        if connection.execute("PRAGMA integrity_check").fetchone() != ("ok",) or connection.execute(
-            "SELECT version_num FROM alembic_version"
-        ).fetchone() != (SCHEMA,):
-            raise DomainError("Sauvegarde incompatible ou corrompue.")
-    engine = prepare_database(destination)
-    engine.dispose()
+    """Shared sealed backup recovery into a NEW sandbox, retaining its source."""
+    from kipartmanager.infrastructure.workspace_backup import (
+        atomic_json,
+        restore_files,
+        verify_backup,
+    )
+
+    if verify_backup(backup)["schema"] != SCHEMA:
+        raise DomainError("Sauvegarde incompatible avec le sandbox.")
     root = checked_root(destination)
-    shutil.copyfile(database, root / "database/catalogue.sqlite3")
-    shutil.copytree(source / "assets", root / "assets", dirs_exist_ok=True)
-    shutil.copytree(source / "config", root / "config", dirs_exist_ok=True)
+    if root.exists():
+        raise DomainError("Restaurer dans un dossier neuf.")
+    root.mkdir(parents=True, mode=0o700)
+    restore_files(backup, root)
+    for name in ("preparations", "backups"):
+        (root / name).mkdir(mode=0o700)
+    atomic_json(root / "TECH03_SANDBOX.json", {"format": SANDBOX_FORMAT, "id": str(uuid4())})
     return create_database_engine(root / "database/catalogue.sqlite3")
+
+
+def exclusive_lock(path: Path) -> BinaryIO:
+    if os.name != "posix":
+        raise DomainError("Verrou POSIX requis / POSIX lock required")
+    import fcntl
+
+    lock = path.open("a+b")
+    try:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        lock.close()
+        raise DomainError("Espace déjà ouvert / Workspace already open") from error
+    return lock
 
 
 @dataclass
@@ -117,15 +130,9 @@ def open_sandbox(path: Path) -> WritableSandbox:
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise DomainError("Un sandbox TECH-03 explicitement préparé est requis.") from error
     check_tree(root)
-    # TECH-03 qualifies macOS. Refuse, rather than silently omitting the lock elsewhere.
-    if os.name != "posix":
-        raise DomainError("Le mode sandbox est actuellement qualifié sur macOS.")
-    import fcntl
-
-    lock = (root / ".writer.lock").open("a+b")
+    lock = exclusive_lock(root / ".writer.lock")
     engine: Engine | None = None
     try:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         db = root / "database/catalogue.sqlite3"
         if not db.is_file():
             raise DomainError("Base du sandbox absente.")
@@ -135,12 +142,9 @@ def open_sandbox(path: Path) -> WritableSandbox:
                 raise DomainError("Schéma sandbox incompatible ; aucune migration automatique.")
             if connection.exec_driver_sql("PRAGMA quick_check").scalar() != "ok":
                 raise DomainError("Intégrité du sandbox invalide.")
-        backup = root / "backups" / uuid4().hex
-        backup.mkdir(mode=0o700)
-        with sqlite3.connect(db) as source, sqlite3.connect(backup / "catalogue.sqlite3") as dest:
-            source.backup(dest)
-        shutil.copytree(root / "assets", backup / "assets")
-        shutil.copytree(root / "config", backup / "config")
+        from kipartmanager.infrastructure.workspace_backup import create_backup
+
+        backup = create_backup(root, root / "backups")
         # Root ownership is exclusive; only explicitly named preparation directories are ours.
         for folder in (root / "preparations").iterdir():
             if (

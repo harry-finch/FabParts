@@ -9,6 +9,9 @@ import { theme, THEMES } from '../../fabparts-ux/src/lib/theme.svelte';
 import { i18n, LOCALES } from '../../fabparts-ux/src/lib/i18n.svelte';
 import { Controller, initial, defaultQuery, type Snapshot } from './controller';
 import { text as t, stateLabel } from './text';
+import WorkspaceSettings from './WorkspaceSettings.svelte';
+import {workspaceText as wt} from './workspace_text';
+import {Settings} from '@lucide/svelte';
 import Details from './Details.svelte';
 import IngestionFlow from './IngestionFlow.svelte';
 import { browserRecovery, business, type Confirmation } from './ingestion';
@@ -17,12 +20,14 @@ const controller = new Controller(invoke, next => view = next);
 let query = $state(defaultQuery());
 let inspector = $state(true), full = $state(false), panelWidth = $state(320);
 let copyPath = $state('');
+let settings=$state(false), workspaceBusy=$state(false), workspaceBlocked=$state(false);
 let adding=$state(false), resumeId=$state(''), notice=$state('');
 const tr=(fr:string,en:string)=>i18n.locale==='fr'?fr:en;
-const writable=$derived(view.health?.read_only===false);
+const personal=$derived(view.health?.workspace_mode==='personal');
+const writable=$derived(view.health?.read_only===false&&!workspaceBlocked);
 let searchInput = $state<HTMLInputElement>();
 $effect(() => { const q = {...query}; const timer = setTimeout(() => void controller.load(q), 180); return () => clearTimeout(timer); });
-onMount(() => { void start(); const timer = setInterval(() => {if(!adding)void controller.heartbeat();}, 3000); return () => { clearInterval(timer); controller.dispose(); }; });
+onMount(() => { void start(); const timer = setInterval(() => {if(!adding&&!workspaceBusy)void controller.heartbeat();}, 3000); return () => { clearInterval(timer); controller.dispose(); }; });
 async function start(){
   await controller.start();
   const operation=browserRecovery.get();
@@ -51,8 +56,8 @@ function resize(event: PointerEvent) {
 </script>
 <svelte:window onkeydown={keydown}/>
 <div class="app-shell">
-  <header class="appbar"><div class="brand"><img src="/logo.svg" alt=""/><strong>FabParts</strong></div><span class="tagline">{t('libraries')}</span><span class="demo-label">{writable?'TECH-03':'TECH-01'} <span>{writable?tr('Sandbox local','Local sandbox'):t('copy')}</span></span>
-    <div class="bar-right"><div class="mini-segments">{#each LOCALES as locale}<button class:on={i18n.locale === locale.id} onclick={() => i18n.set(locale.id)}>{locale.id.toUpperCase()}</button>{/each}</div>
+  <header class="appbar"><div class="brand"><img src="/logo.svg" alt=""/><strong>FabParts</strong></div><span class="tagline">{t('libraries')}</span><span class="demo-label">{personal?'TECH-04A':writable?'TECH-03':'TECH-01'} <span>{personal?wt('personal'):writable?tr('Sandbox local','Local sandbox'):t('copy')}</span></span>
+    <div class="bar-right">{#if personal}<button class="btn quiet icon" disabled={adding||workspaceBusy} aria-label={wt('settings')} title={wt('settings')} onclick={()=>settings=!settings}><Settings size={15}/></button>{/if}<div class="mini-segments">{#each LOCALES as locale}<button class:on={i18n.locale === locale.id} onclick={() => i18n.set(locale.id)}>{locale.id.toUpperCase()}</button>{/each}</div>
     <div class="mini-segments">{#each THEMES as choice}<button class:on={theme.choice === choice} onclick={() => theme.set(choice)} aria-label={choice} title={choice}>{#if choice === 'dark'}<Moon size={14}/>{:else if choice === 'light'}<Sun size={14}/>{:else}<Monitor size={14}/>{/if}</button>{/each}</div></div>
   </header>
   <div class="workspace">
@@ -65,12 +70,14 @@ function resize(event: PointerEvent) {
         <button disabled={adding} class="nav-row" class:active={!query.category} onclick={() => { query.category='';query.offset=0;full=false; }}><Layers size={14}/><span>{t('allCategories')}</span></button>
         {#each view.page.facets.categories as category}<button disabled={adding} class="nav-row" class:active={query.category === category} onclick={() => { query.category=category;query.offset=0;full=false; }}><Cpu size={14}/><span>{category}</span></button>{/each}
       </Section>
-      <div class="sidebar-bottom"><LockKeyhole size={14}/><div><p>{writable?tr('Sandbox de test · écritures locales','Test sandbox · local writes'):t('readonly')}</p>{#if view.health}<Disclosure id="tech-engine" label={t('technical')}><p class="engine-metadata">PID {view.health.pid}<br/>Python {view.health.engine_version}<br/>Qt {String(view.health.qt_loaded)}<br/>{view.health.schema}</p></Disclosure>{/if}</div></div>
+      <div class="sidebar-bottom"><LockKeyhole size={14}/><div><p>{personal?wt('personal'):writable?tr('Sandbox de test · écritures locales','Test sandbox · local writes'):t('readonly')}</p>{#if view.health}<Disclosure id="tech-engine" label={t('technical')}><p class="engine-metadata">PID {view.health.pid}<br/>Python {view.health.engine_version}<br/>Qt {String(view.health.qt_loaded)}<br/>{view.health.schema}</p></Disclosure>{/if}</div></div>
     </aside>
     <main>
       {#if notice}<div class="save-notice" role="status">{notice}<button class="btn quiet" aria-label={tr('Fermer le message','Dismiss message')} onclick={()=>notice=''}><X size={14}/></button></div>{/if}
-      {#if adding}
-        <IngestionFlow partId={resumeId} library={query.library} oncancel={()=>{adding=false;notice=tr('Ajout annulé.','Addition cancelled.');}} onsave={saved} onexisting={existing}/>
+      {#if settings && personal}
+        <WorkspaceSettings onback={()=>settings=false} onbusy={value=>workspaceBusy=value} onblocked={value=>workspaceBlocked=value} onrestart={async()=>{settings=false;workspaceBlocked=false;await start();}}/>
+      {:else if adding}
+        <IngestionFlow {personal} partId={resumeId} library={query.library} oncancel={()=>{adding=false;notice=tr('Ajout annulé.','Addition cancelled.');}} onsave={saved} onexisting={existing}/>
       {:else if full && view.phase === 'ready'}
         <section class="detail-page"><div class="detail-toolbar"><button class="btn quiet" onclick={() => full=false}><ArrowLeft size={15}/>{t('back')}</button><span class="crumb">/</span><span>{view.detail?.reference || t('loading')}</span><span class="grow"></span>{#if writable&&view.detail?.state==='DRAFT'}<button class="btn" onclick={()=>add(view.detail!.id)}>{tr('Compléter le brouillon','Complete draft')}</button>{/if}</div>
           <div class="detail-content">{#if view.detail}<Details detail={view.detail} full/>{:else}<div class="empty-state">{t('loading')}</div>{/if}</div>
@@ -86,7 +93,7 @@ function resize(event: PointerEvent) {
         <div class="catalogue" class:no-inspector={!inspector} style:--inspector-width={`${panelWidth}px`}>
           <div class="list-region" aria-busy={view.loading || view.phase === 'starting'}>
             <div class="result-context"><span>{query.category || t('component')}</span><span>{view.page.total} {t('results')}</span></div>
-            {#if view.phase === 'failed'}<div class="empty-state" role="alert"><TriangleAlert size={28}/><h2>{t('failed')}</h2><p>{view.error?.message}</p><span class="secondary small">{view.error?.code}</span>{#if ['DATA_DIR_REQUIRED','INVALID_DATA_DIR','STARTUP_FAILED'].includes(view.error?.code || '')}<label class="copy-path">{t('copyDirectory')}<input class="input" bind:value={copyPath} placeholder="/…/catalogue-copy"/></label>{/if}<button class="btn primary" onclick={() => { if (copyPath.trim()) controller.dataDir=copyPath.trim(); void start(); }}><RefreshCw size={14}/>{t('restart')}</button></div>
+            {#if view.phase === 'failed'}<div class="empty-state" role="alert"><TriangleAlert size={28}/><h2>{t('failed')}</h2><p>{view.error?.code==='WORKSPACE_UNAVAILABLE'?wt('unavailable'):view.error?.message}</p><span class="secondary small">{view.error?.code}</span>{#if ['DATA_DIR_REQUIRED','INVALID_DATA_DIR','STARTUP_FAILED'].includes(view.error?.code || '')}<label class="copy-path">{t('copyDirectory')}<input class="input" bind:value={copyPath} placeholder="/…/catalogue-copy"/></label>{/if}<button class="btn primary" onclick={() => { if (copyPath.trim()) controller.dataDir=copyPath.trim(); void start(); }}><RefreshCw size={14}/>{t('restart')}</button></div>
             {:else if view.phase === 'starting' || view.loading}<div class="empty-state" role="status"><RefreshCw size={26}/><h2>{t(view.phase === 'starting' ? 'starting' : 'loading')}</h2></div>
             {:else if !view.page.components.length}<div class="empty-state"><Library size={28}/><h2>{t('empty')}</h2><p>{t('emptyHint')}</p><button class="btn" onclick={clear}>{t('clear')}</button></div>
             {:else}<div class="table-scroll"><table><thead><tr><th>{t('component')}</th><th>{t('package')}</th><th>{t('state')}</th><th class="library-cell">{t('libraries')}</th></tr></thead><tbody>
@@ -101,7 +108,7 @@ function resize(event: PointerEvent) {
       </section>{/if}
     </main>
   </div>
-  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{writable?tr('Sandbox · données de test','Sandbox · test data'):t('copy')}</span>{#snippet right()}<span>{writable?'TECH-03':'TECH-02B'} · IPC v1</span>{/snippet}</StatusBar>
+  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{personal?wt('personal'):writable?tr('Sandbox · données de test','Sandbox · test data'):t('copy')}</span>{#snippet right()}<span>{personal?'TECH-04A':writable?'TECH-03':'TECH-02B'} · IPC v1</span>{/snippet}</StatusBar>
 </div>
 
 <style>
