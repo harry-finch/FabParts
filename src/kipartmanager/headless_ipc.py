@@ -2,15 +2,18 @@
 
 import json
 import os
+import re
 import sys
 from collections.abc import Callable
 from typing import Any, BinaryIO
 from uuid import UUID
 
 from kipartmanager import __version__
+from kipartmanager.application.asset_previews import AssetPreviews
 from kipartmanager.application.catalogue_reader import CatalogueReader
 from kipartmanager.domain.entities import DomainError, PartState
 from kipartmanager.infrastructure.readonly_catalogue import SCHEMA
+from kipartmanager.ports.previews import PDF_LIMIT
 
 PROTOCOL_VERSION = 1
 MAX_REQUEST = 16 * 1024
@@ -38,6 +41,9 @@ def validate_params(method: str, params: object) -> dict[str, Any]:
         "health": set(),
         "list_libraries": set(),
         "get_component": {"id"},
+        "get_asset_preview": {"id", "role", "asset_id"},
+        "read_pdf_chunk": {"handle", "offset"},
+        "release_preview": {"handle"},
         "list_components": {"library", "search", "limit", "offset", "category", "package", "state"},
     }
     if method not in fields:
@@ -45,7 +51,9 @@ def validate_params(method: str, params: object) -> dict[str, Any]:
     if not isinstance(params, dict) or set(params) - fields[method]:
         raise ProtocolError("INVALID_PARAMS", "Paramètres non reconnus.")
     for key, value in params.items():
-        if key in {"limit", "offset"}:
+        if method == "read_pdf_chunk" and key == "offset":
+            valid = type(value) is int and 0 <= value < PDF_LIMIT and value % 65536 == 0
+        elif key in {"limit", "offset"}:
             bounds = (1, 100) if key == "limit" else (0, 1000000)
             valid = type(value) is int and bounds[0] <= value <= bounds[1]
         else:
@@ -54,7 +62,11 @@ def validate_params(method: str, params: object) -> dict[str, Any]:
             raise ProtocolError("INVALID_PARAMS", "Paramètre invalide ou hors limites.")
     if params.get("state") and params["state"] not in {s.value for s in PartState}:
         raise ProtocolError("INVALID_PARAMS", "État métier inconnu.")
-    for key in ["id"] if method == "get_component" else []:
+    for key in (
+        (["id"] + (["asset_id"] if params.get("asset_id") else []))
+        if method in {"get_component", "get_asset_preview"}
+        else []
+    ):
         try:
             UUID(params[key])
         except (ValueError, KeyError, TypeError) as error:
@@ -66,10 +78,25 @@ def validate_params(method: str, params: object) -> dict[str, Any]:
             raise ProtocolError(
                 "INVALID_PARAMS", "Identifiant de bibliothèque invalide."
             ) from error
+    if method == "get_asset_preview" and params.get("role") not in {
+        "SYMBOL",
+        "FOOTPRINT",
+        "DATASHEET",
+        "MODEL_3D",
+    }:
+        raise ProtocolError("INVALID_PARAMS", "Rôle de ressource requis.")
+    if method in {"read_pdf_chunk", "release_preview"} and not re.fullmatch(
+        r"[0-9a-f]{48}", params.get("handle", "")
+    ):
+        raise ProtocolError("INVALID_PARAMS", "Handle PDF invalide.")
+    if method == "read_pdf_chunk" and "offset" not in params:
+        raise ProtocolError("INVALID_PARAMS", "Position de bloc requise.")
     return params
 
 
-def respond(raw: bytes, reader: CatalogueReader) -> dict[str, Any]:
+def respond(
+    raw: bytes, reader: CatalogueReader, previews: AssetPreviews | None = None
+) -> dict[str, Any]:
     identity = None
     try:
         if len(raw) > MAX_REQUEST:
@@ -108,6 +135,16 @@ def respond(raw: bytes, reader: CatalogueReader) -> dict[str, Any]:
             "list_components": lambda: reader.components(params),
             "get_component": lambda: reader.component(UUID(params["id"])),
         }
+        if previews is not None:
+            commands.update(
+                {
+                    "get_asset_preview": lambda: previews.get(**params),
+                    "read_pdf_chunk": lambda: previews.chunk(**params),
+                    "release_preview": lambda: previews.release(**params),
+                }
+            )
+        if method not in commands:
+            raise ProtocolError("READ_FAILED", "Service d’aperçu indisponible.")
         result = commands[method]()
         return {"protocol_version": 1, "request_id": identity, "ok": True, "result": result}
     except ProtocolError as error:
@@ -121,7 +158,12 @@ def respond(raw: bytes, reader: CatalogueReader) -> dict[str, Any]:
         )
 
 
-def serve(reader: CatalogueReader, source: BinaryIO, destination: BinaryIO) -> None:
+def serve(
+    reader: CatalogueReader,
+    source: BinaryIO,
+    destination: BinaryIO,
+    previews: AssetPreviews | None = None,
+) -> None:
     while raw := source.readline(MAX_REQUEST + 1):
         if len(raw) > MAX_REQUEST:
             response = error_response(None, "FRAME_TOO_LARGE", "Requête trop volumineuse.")
@@ -131,7 +173,7 @@ def serve(reader: CatalogueReader, source: BinaryIO, destination: BinaryIO) -> N
         if not raw.endswith(b"\n"):
             response = error_response(None, "INVALID_REQUEST", "Message JSONL incomplet.")
         else:
-            response = respond(raw, reader)
+            response = respond(raw, reader, previews)
         encoded = json.dumps(response, ensure_ascii=False, allow_nan=False).encode()
         if len(encoded) > MAX_RESPONSE:
             encoded = json.dumps(

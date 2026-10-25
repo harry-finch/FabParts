@@ -21,7 +21,7 @@ onMount(() => { void controller.start(); const timer = setInterval(() => void co
 function clear() { query = defaultQuery(); }
 function keydown(event: KeyboardEvent) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); full = false; setTimeout(() => searchInput?.focus()); }
-  if (event.key === 'Escape') full = false;
+  if (event.key === 'Escape' && !document.querySelector('dialog[open]')) full = false;
 }
 function resize(event: PointerEvent) {
   const start = event.clientX, width = panelWidth;
@@ -79,7 +79,7 @@ function resize(event: PointerEvent) {
       </section>{/if}
     </main>
   </div>
-  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{t('copy')}</span>{#snippet right()}<span>TECH-01 · IPC v1</span>{/snippet}</StatusBar>
+  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{t('copy')}</span>{#snippet right()}<span>TECH-02A · IPC v1</span>{/snippet}</StatusBar>
 </div>
 
 <style>

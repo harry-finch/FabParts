@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from kipartmanager.domain.asset_files import AssetFile
+from kipartmanager.domain.entities import DomainError
 from kipartmanager.domain.kicad import KiCadReference
 
 
@@ -47,3 +48,15 @@ class PreviewReader(Protocol):
     def managed(self, file: AssetFile) -> PreviewContent: ...
 
     def official(self, reference: KiCadReference) -> PreviewContent: ...
+
+
+PDF_LIMIT = 16 * 1024 * 1024
+PDF_CHUNK = 64 * 1024
+HANDLE_TTL = 120
+MAX_HANDLES = 2
+
+
+class PreviewProblem(DomainError):
+    def __init__(self, status: str, message: str) -> None:
+        super().__init__(message)
+        self.status = status

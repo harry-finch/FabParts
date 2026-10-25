@@ -1,5 +1,5 @@
 {
-  "audit_date": "2026-10-24",
+  "audit_date": "2026-10-25",
   "scope": "Declared installed metadata and locked dependencies; not a binary redistribution clearance or vulnerability scan.",
   "python": [
     {
@@ -3502,6 +3502,90 @@
         "optional": false
       },
       {
+        "name": "@napi-rs/canvas",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-android-arm64",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-darwin-arm64",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-darwin-x64",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-linux-arm-gnueabihf",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-linux-arm64-gnu",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-linux-arm64-musl",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-linux-riscv64-gnu",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-linux-x64-gnu",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-linux-x64-musl",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-win32-arm64-msvc",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
+        "name": "@napi-rs/canvas-win32-x64-msvc",
+        "version": "1.0.13",
+        "license": "MIT",
+        "dev": false,
+        "optional": true
+      },
+      {
         "name": "@oxc-project/types",
         "version": "0.155.0",
         "license": "MIT",
@@ -3954,6 +4038,13 @@
         "version": "2.2.1",
         "license": "MIT",
         "dev": true,
+        "optional": false
+      },
+      {
+        "name": "pdfjs-dist",
+        "version": "6.4.299",
+        "license": "Apache-2.0",
+        "dev": false,
         "optional": false
       },
       {

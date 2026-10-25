@@ -59,3 +59,6 @@ coverage.xml
 /scripts/check-git01.py
 /scripts/check-git03.py
 /prototypes/fabparts-tech-01/scripts/verify-consolidation.py
+
+# Public TECH-02A checkpoint (historical internal reports remain excluded).
+!/docs/FABPARTS_2_TECH_02A.md

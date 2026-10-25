@@ -17,10 +17,10 @@ There are three distinct interfaces in this repository:
 | Part | What exists | Important limits |
 | --- | --- | --- |
 | Historical Python/PySide6 application | Component and inventory management, asset import and integrity checks, local KiCad indexing and resolution, bounded validation, versioned publication and `.kiparts` transfer; local previews and optional assistance | Development software, with documented format and workflow limits. Existing validation is not a guarantee of electrical correctness. |
-| Tauri 2 / Svelte 5 prototype | A real Python sidecar reading a controlled SQLite copy; catalogue, search, filters, component details, light/dark layouts and engine restart | Read-only. Real resource previews and business writes are not connected. Native validation covers one macOS ARM64 environment. |
+| Tauri 2 / Svelte 5 prototype | A real Python sidecar reading a controlled SQLite copy; catalogue, search, filters, component details, light/dark layouts and engine restart | Read-only. TECH-02A connects KiCad symbol/footprint geometry and local multipage PDFs; 3D and business writes remain outside this prototype. Native validation covers one macOS ARM64 environment. |
 | UX prototype | Interactive demonstrations of proposed workflows using explicit fixtures | Simulated resources and operations; no real catalogue engine. |
 
-The SnapMagic adapter is scaffolding tested with a fake provider. A live partner client, approved access and redistribution rights are not established. Future KiCad synchronization, unified ingestion and new preview integration are not delivered by the Tauri prototype.
+The SnapMagic adapter is scaffolding tested with a fake provider. A live partner client, approved access and redistribution rights are not established. Future KiCad synchronization, unified ingestion and 3D preview integration are not delivered by the Tauri prototype.
 
 The historical application is documented in the [legacy desktop guide](docs/LEGACY_DESKTOP.md). The [product specification](docs/PROJECT_SPEC.md), [UX specification](docs/UX_SPEC.md) and [architecture](docs/ARCHITECTURE.md) distinguish implemented behavior from targets.
 
@@ -112,7 +112,7 @@ Cargo's offline mode requires dependencies to have been fetched beforehand. Taur
 
 ## Roadmap
 
-The next technical work is to connect real asset previews to the Tauri interface, then develop component ingestion and explicit resource workflows. KiCad integration and packaging will be expanded through separately reviewed milestones. This is a direction, not a release schedule or a promise of complete provider coverage.
+TECH-02A connects real 2D and PDF previews; see its [checkpoint](docs/FABPARTS_2_TECH_02A.md). Later work concerns 3D previews, component ingestion and explicit resource workflows, each requiring its own milestone. KiCad integration and packaging will be expanded through separately reviewed milestones. This is a direction, not a release schedule or a promise of complete provider coverage.
 
 See the [milestone record](docs/MILESTONES.md) for the historical engine and [UX specification](docs/UX_SPEC.md) for FabParts 2.0 targets.
 

@@ -66,3 +66,33 @@ puis le groupe est arrêté si nécessaire. Les diagnostics stderr sont limités
 une liste de champs de processus/transport ; paramètres et résultats métier
 ne sont jamais journalisés. Le harnais utilise ces identités et conserve chaque
 exécution séparément.
+
+## Extension TECH-02A — 25 octobre 2026
+
+Les commandes additives `get_asset_preview`, `read_pdf_chunk` et `release_preview`
+conservent JSONL v1. Rust valide UUID/rôles et handles/offsets, puis sérialise les
+lectures dans la session existante. Un handle PDF n’est lisible que s’il a été
+retourné par cette session. Les limites et l’annulation de fermeture restent actives.
+
+`AssetPreviews` résout les sélections et associations métier avant `Previews`.
+`ReadonlyPreviews` implémente le port existant ; il lit uniquement le store de la
+copie ou les racines de sa configuration KiCad, avec contrôle SHA-256. Aucun import,
+index, migration, écriture ou découverte automatique au démarrage. Le parseur
+`kicad_preview` et les DTO neutres sont réutilisés. L’infrastructure continue de
+dépendre des ports et du domaine, pas de l’application.
+
+PDF.js embarqué remplace QtPdf uniquement dans ce frontend. Un worker local lit
+un snapshot transféré par blocs de 64 Kio, limité à 16 Mio, via un handle aléatoire
+valable 120 s. Deux snapshots maximum en mémoire Python ; libération après transfert,
+à l’expiration lors de la prochaine commande, ou à la fermeture. Aucun fichier
+temporaire, URL distante, accès filesystem JavaScript ou couche de scripts PDF.
+Les polices standard et CMaps sont locales. Le rendu natif WebView a été écarté
+pour son comportement variable selon l’OS ; un moteur Python de rasterisation
+ajouterait une dépendance native et du transport d’images. Le choix ne change pas
+le viewer historique QtPdf ni les formats de stockage.
+
+Les dessins sont rendus en SVG échappé par Svelte, sans HTML issu des fichiers.
+Le cache de quatre géométries est indexé par SHA/type/symbole et le hash du fichier
+est revérifié avant réutilisation. Zoom/couches/unités ne relancent pas le parseur.
+Une prévisualisation ne change jamais les qualifications. Voir le
+[checkpoint TECH-02A](../FABPARTS_2_TECH_02A.md) pour les bornes et preuves.
