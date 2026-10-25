@@ -87,3 +87,13 @@ test('idle health probes do not accumulate while the engine is slow', async () =
   assert.equal(calls.filter(c=>c[0]==='health').length,1);
   release(health); await pending; assert.equal(controller.state.phase,'ready');
 });
+test('confirmed save refreshes libraries, resets filters and keeps the saved component selected', async () => {
+  const saved={...detail,id:'saved-id',reference:'NEW-PART',libraries:[{id:'collection-1',name:'Workshop'}]};
+  const {controller,calls}=setup({get_component:({id})=>id===saved.id?saved:detail,list_components:()=>({...page,components:[component,saved],total:2})});
+  await controller.start();
+  await controller.load({...defaultQuery(),library:'old-library',category:'old-category',offset:50});
+  await controller.saved(saved.id);
+  assert.equal(controller.state.detail.id,saved.id);
+  assert.deepEqual(calls.findLast(c=>c[0]==='list_components')[1].query,{...defaultQuery(),search:'NEW-PART'});
+  assert.equal(calls.filter(c=>c[0]==='list_libraries').length,2);
+});

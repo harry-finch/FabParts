@@ -1,4 +1,5 @@
 <script lang="ts">
+import { tr } from './text';
 import { ZoomIn, ZoomOut, Scan } from '@lucide/svelte';
 import { type Drawing, zoomed, viewBox, paintOrder, layerGroup, layerColor } from './preview';
 let { drawings, large=false }: {drawings:Drawing[];large?:boolean}=$props();
@@ -8,8 +9,8 @@ let layers=$derived([...new Set(drawing.primitives.map(p=>layerGroup(p.layer)))]
 </script>
 <div class="drawing-view" class:large>
 <div class="tools">
-{#if drawings.length>1}<label>Unité / variante <select bind:value={index} onchange={()=>zoom=1}>{#each drawings as d,i}<option value={i}>{d.name} · {d.unit} / {d.style}</option>{/each}</select></label>{/if}
-<button title="Zoom arrière" aria-label="Zoom arrière" onclick={()=>zoom=zoomed(zoom,1/1.5)}><ZoomOut size={14}/></button><button title="Zoom avant" aria-label="Zoom avant" onclick={()=>zoom=zoomed(zoom,1.5)}><ZoomIn size={14}/></button><button title="Recentrer" aria-label="Recentrer" onclick={()=>zoom=1}><Scan size={14}/></button>
+{#if drawings.length>1}<label>{tr('Unité / variante','Unit / variant')} <select bind:value={index} onchange={()=>zoom=1}>{#each drawings as d,i}<option value={i}>{d.name} · {d.unit} / {d.style}</option>{/each}</select></label>{/if}
+<button title={tr('Zoom arrière','Zoom out')} aria-label={tr('Zoom arrière','Zoom out')} onclick={()=>zoom=zoomed(zoom,1/1.5)}><ZoomOut size={14}/></button><button title={tr('Zoom avant','Zoom in')} aria-label={tr('Zoom avant','Zoom in')} onclick={()=>zoom=zoomed(zoom,1.5)}><ZoomIn size={14}/></button><button title={tr('Recentrer','Fit drawing')} aria-label={tr('Recentrer','Fit drawing')} onclick={()=>zoom=1}><Scan size={14}/></button>
 </div>
 <svg role="img" aria-label={drawing.name} viewBox={viewBox(drawing.bounds,zoom)} preserveAspectRatio="xMidYMid meet">
 {#each paintOrder(drawing.primitives).filter(p=>!hidden.includes(layerGroup(p.layer))) as p}
@@ -24,11 +25,11 @@ let layers=$derived([...new Set(drawing.primitives.map(p=>layerGroup(p.layer)))]
 {:else}<polyline points={p.points.map(pt=>pt.join(',')).join(' ')}/>{/if}
 </g>{/each}
 </svg>
-{#if layers.includes('F.Cu')}<details class="layers" open={large}><summary>Couches</summary><div>{#each layers as layer}<label><input type="checkbox" checked={!hidden.includes(layer)} onchange={()=>hidden=hidden.includes(layer)?hidden.filter(l=>l!==layer):[...hidden,layer]}/><span style:color={layerColor(layer)}>{layer}</span></label>{/each}</div></details>{/if}
-{#if drawing.warnings.length}<p class="warning" role="status">Aperçu partiel · {drawing.warnings.join(' ')}</p>{/if}
-{#if large}<p class="scale">Coordonnées en mm · géométrie du fichier · {Math.round(zoom*100)} %</p>{/if}
+{#if layers.includes('F.Cu')}<details class="layers" open={large}><summary>{tr('Couches','Layers')}</summary><div>{#each layers as layer}<label><input type="checkbox" checked={!hidden.includes(layer)} onchange={()=>hidden=hidden.includes(layer)?hidden.filter(l=>l!==layer):[...hidden,layer]}/><span style:color={layerColor(layer)}>{layer}</span></label>{/each}</div></details>{/if}
+{#if drawing.warnings.length}<p class="warning" role="status">{tr('Aperçu partiel','Partial preview')} · {drawing.warnings.join(' ')}</p>{/if}
+{#if large}<p class="scale">{tr('Coordonnées en mm · géométrie du fichier','Coordinates in mm · file geometry')} · {Math.round(zoom*100)} %</p>{/if}
 </div>
 <style>
-.drawing-view{position:relative;min-width:0;background:var(--bg-workspace)}svg{display:block;width:100%;height:144px;font-family:var(--font-ui),sans-serif}.large svg{height:54vh;min-height:250px}
+.drawing-view{position:relative;min-width:0;background:var(--bg-workspace)}svg{display:block;width:100%;height:var(--asset-preview-height,144px);font-family:var(--font-ui),sans-serif}.large svg{height:54vh;min-height:250px}
 .tools{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:4px 8px;min-height:30px}.tools label{font-size:var(--fs-xs);display:flex;align-items:center;gap:4px;flex:1;min-width:0}select{max-width:100%;min-width:0;background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border)}button{background:var(--bg-panel);border:1px solid var(--border);color:var(--text-primary);padding:4px;display:inline-flex;cursor:pointer}.layers{padding:4px 8px;font-size:var(--fs-xs);color:var(--text-secondary)}.layers div{display:flex;gap:8px;flex-wrap:wrap;padding:4px 0}.layers label{display:flex;align-items:center;gap:3px}.warning,.scale{margin:0;padding:6px 8px;font-size:var(--fs-xs);color:var(--text-secondary);overflow-wrap:anywhere}
 </style>

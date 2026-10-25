@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ingestion-command"
+description = "Enables the ingestion_command command without any pre-configured scope."
+commands.allow = ["ingestion_command"]
+
+[[permission]]
+identifier = "deny-ingestion-command"
+description = "Denies the ingestion_command command without any pre-configured scope."
+commands.deny = ["ingestion_command"]

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod diagnostics;
+mod ingestion;
 mod ipc;
 mod previews;
 
@@ -23,6 +24,9 @@ struct Session {
     sequence: u64,
     pdf_handles: std::collections::VecDeque<String>,
     model_handles: std::collections::VecDeque<String>,
+    preparation: Option<String>,
+    prepared_pdf: std::collections::VecDeque<String>,
+    prepared_models: std::collections::VecDeque<String>,
 }
 impl Session {
     async fn call(
@@ -119,10 +123,21 @@ impl Drop for Session {
 }
 struct Engine {
     data_dir: Mutex<Option<PathBuf>>,
+    sandbox_dir: Option<PathBuf>,
+    picking: Mutex<()>,
     session: Mutex<Option<Session>>,
     closing: watch::Sender<bool>,
 }
 impl Engine {
+    async fn authorize_preparation(&self, preparation: &str) -> Result<(), Failure> {
+        let guard = self.session.lock().await;
+        ingestion::authorize(
+            self.sandbox_dir.is_some(),
+            guard.as_ref().and_then(|s| s.preparation.as_deref()),
+            "ingestion_file_start",
+            &json!({"preparation":preparation}),
+        )
+    }
     async fn call(&self, method: &str, params: Value) -> Reply {
         let mut guard = ipc::unless_closing(self.closing.subscribe(), async {
             tokio::time::timeout(TIMEOUT, self.session.lock())
@@ -130,6 +145,14 @@ impl Engine {
                 .map_err(|_| Failure::new("BUSY", "Le moteur est occupé."))
         })
         .await?;
+        if method.starts_with("ingestion_") {
+            ingestion::authorize(
+                self.sandbox_dir.is_some(),
+                guard.as_ref().and_then(|s| s.preparation.as_deref()),
+                method,
+                &params,
+            )?;
+        }
         if ["get_model_status", "read_mesh_chunk"].contains(&method)
             && !guard.as_ref().is_some_and(|s| {
                 s.model_handles
@@ -159,7 +182,16 @@ impl Engine {
             .ok_or_else(|| {
                 Failure::new("ENGINE_UNAVAILABLE", "Moteur indisponible. Redémarrez-le.")
             })?
-            .call(method, &params, TIMEOUT, self.closing.subscribe())
+            .call(
+                method,
+                &params,
+                if method == "ingestion_commit" {
+                    STARTUP_TIMEOUT
+                } else {
+                    TIMEOUT
+                },
+                self.closing.subscribe(),
+            )
             .await;
         Self::finish_call(&mut guard, method, &params, result)
     }
@@ -179,7 +211,7 @@ impl Engine {
             }
         }
         if let (Ok(value), Some(session)) = (&result, guard.as_mut()) {
-            if method == "get_asset_preview" {
+            if ["get_asset_preview", "ingestion_preview"].contains(&method) {
                 if let Some(handle) = value["handle"].as_str() {
                     previews::handle(handle)?;
                     let handles = if value["kind"] == "MODEL_3D" {
@@ -191,6 +223,17 @@ impl Engine {
                         handles.pop_front();
                     }
                     handles.push_back(handle.to_owned());
+                    if method == "ingestion_preview" {
+                        let owned = if value["kind"] == "MODEL_3D" {
+                            &mut session.prepared_models
+                        } else {
+                            &mut session.prepared_pdf
+                        };
+                        while owned.len() >= 2 {
+                            owned.pop_front();
+                        }
+                        owned.push_back(handle.to_owned());
+                    }
                 }
             } else if ["release_preview", "release_model_preview"].contains(&method)
                 && value["released"].as_bool() == Some(true)
@@ -204,13 +247,47 @@ impl Engine {
                         &mut session.pdf_handles
                     };
                     handles.retain(|registered| registered != handle);
+                    let owned = if method == "release_model_preview" {
+                        &mut session.prepared_models
+                    } else {
+                        &mut session.prepared_pdf
+                    };
+                    owned.retain(|registered| registered != handle);
                 }
+            }
+        }
+        if let (Ok(value), Some(session)) = (&result, guard.as_mut()) {
+            if (method == "ingestion_begin")
+                || (method == "ingestion_cancel" && value["cancelled"] == true)
+                || (method == "ingestion_commit" && value["status"] == "saved")
+            {
+                session
+                    .pdf_handles
+                    .retain(|h| !session.prepared_pdf.contains(h));
+                session
+                    .model_handles
+                    .retain(|h| !session.prepared_models.contains(h));
+                session.prepared_pdf.clear();
+                session.prepared_models.clear();
+                session.preparation = if method == "ingestion_begin" {
+                    let handle = value["preparation"]
+                        .as_str()
+                        .ok_or_else(|| Failure::new("INVALID_RESPONSE", "Préparation absente."))?;
+                    previews::handle(handle)?;
+                    Some(handle.to_owned())
+                } else {
+                    None
+                };
             }
         }
         if let Err(error) = &result {
             if !matches!(
                 error.code.as_str(),
-                "DOMAIN_ERROR" | "INVALID_PARAMS" | "READ_FAILED" | "RESPONSE_TOO_LARGE"
+                "DOMAIN_ERROR"
+                    | "INVALID_PARAMS"
+                    | "READ_FAILED"
+                    | "RESPONSE_TOO_LARGE"
+                    | "READ_ONLY"
             ) {
                 // Discard a failed stream, including all late responses.
                 guard.take();
@@ -308,6 +385,12 @@ async fn restart_session(
     engine: &Engine,
     data_dir: Option<String>,
 ) -> Reply {
+    if engine.sandbox_dir.is_some() && data_dir.is_some() {
+        return Err(Failure::new(
+            "READ_ONLY",
+            "Le dossier writable est fixé par l’hôte au lancement.",
+        ));
+    }
     let mut guard = ipc::unless_closing(engine.closing.subscribe(), async {
         tokio::time::timeout(STARTUP_TIMEOUT, engine.session.lock())
             .await
@@ -342,8 +425,12 @@ async fn restart_session(
     })?;
     if !directory.is_dir() {
         return Err(Failure::new(
-            "INVALID_DATA_DIR",
-            "Le dossier de la copie est introuvable.",
+            if engine.sandbox_dir.is_some() {
+                "SANDBOX_UNAVAILABLE"
+            } else {
+                "INVALID_DATA_DIR"
+            },
+            "Le dossier de données est introuvable.",
         ));
     }
     let mut command = app
@@ -355,6 +442,9 @@ async fn restart_session(
         .env("TMPDIR", std::env::temp_dir())
         .set_raw_out(true)
         .set_process_group(true);
+    if engine.sandbox_dir.is_some() {
+        command = command.args(["--sandbox"]);
+    }
     // Optional local converter chosen by the launching user, never by the WebView.
     if let Some(path) = std::env::var_os("KIPART_FREECAD_CMD") {
         command = command.env("KIPART_FREECAD_CMD", path);
@@ -373,6 +463,9 @@ async fn restart_session(
         sequence: 0,
         pdf_handles: Default::default(),
         model_handles: Default::default(),
+        preparation: None,
+        prepared_pdf: Default::default(),
+        prepared_models: Default::default(),
     };
     let result = session
         .call(
@@ -385,13 +478,19 @@ async fn restart_session(
         .map_err(|error| {
             if error.code == "ENGINE_EXITED" {
                 Failure::new(
-                    "STARTUP_FAILED",
-                    "Le moteur n’a pas pu ouvrir la copie. Vérifiez son dossier et son schéma.",
+                    if engine.sandbox_dir.is_some() { "SANDBOX_UNAVAILABLE" } else { "STARTUP_FAILED" },
+                    if engine.sandbox_dir.is_some() { "Sandbox inaccessible, déjà ouvert ou incompatible. Fermez l’autre session avant de réessayer." } else { "Le moteur n’a pas pu ouvrir la copie. Vérifiez son dossier et son schéma." },
                 )
             } else {
                 error
             }
         })?;
+    if result["read_only"].as_bool() != Some(engine.sandbox_dir.is_none()) {
+        return Err(Failure::new(
+            "INVALID_RESPONSE",
+            "Le mode du moteur ne correspond pas à celui de l’hôte.",
+        ));
+    }
     diagnostics::event(
         "ready",
         json!({"sidecar_pid":pid,"worker_pid":result["pid"],"state":"ready"}),
@@ -405,14 +504,27 @@ fn main() {
         Some(arg) if arg == "--data-dir" => args.next().map(PathBuf::from),
         _ => None,
     };
+    let sandbox_dir = std::env::var_os("FABPARTS_SANDBOX_DIR").map(PathBuf::from);
+    let data_dir = sandbox_dir.clone().or(data_dir);
     let (closing, _) = watch::channel(false);
     diagnostics::event("app_started", json!({"state":"starting"}));
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(Engine {
             data_dir: Mutex::new(data_dir),
+            sandbox_dir,
+            picking: Mutex::new(()),
             session: Mutex::new(None),
             closing,
+        })
+        .setup(|app| {
+            if app.state::<Engine>().sandbox_dir.is_some() {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_title("FabParts — TECH-03 · Sandbox")?;
+                }
+            }
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             health,
@@ -425,7 +537,9 @@ fn main() {
             release_preview,
             get_model_status,
             read_mesh_chunk,
-            release_model_preview
+            release_model_preview,
+            ingestion::ingestion_command,
+            ingestion::choose_ingestion_files
         ])
         .build(tauri::generate_context!())
         .expect("FabParts TECH-01 startup");
@@ -448,6 +562,41 @@ fn main() {
 mod tests {
     use super::*;
 
+    #[test]
+    fn preparation_cancel_and_commit_revoke_only_owned_preview_handles() {
+        for (method, reply) in [
+            ("ingestion_cancel", json!({"cancelled":true})),
+            (
+                "ingestion_commit",
+                json!({"status":"saved","part_id":"confirmed"}),
+            ),
+        ] {
+            let mut session = Some(empty_session());
+            let regular = "a".repeat(48);
+            let prepared = "b".repeat(48);
+            issue(&mut session, &regular);
+            Engine::finish_call(
+                &mut session,
+                "ingestion_begin",
+                &json!({}),
+                Ok(json!({"preparation":"c".repeat(48)})),
+            )
+            .unwrap();
+            Engine::finish_call(
+                &mut session,
+                "ingestion_preview",
+                &json!({}),
+                Ok(json!({"kind":"DATASHEET","handle":prepared})),
+            )
+            .unwrap();
+            assert_eq!(handles(&session), [regular.as_str(), prepared.as_str()]);
+            Engine::finish_call(&mut session, method, &json!({}), Ok(reply)).unwrap();
+            assert_eq!(handles(&session), [regular.as_str()]);
+            assert!(session.as_ref().unwrap().preparation.is_none());
+            assert!(session.as_ref().unwrap().prepared_pdf.is_empty());
+        }
+    }
+
     fn empty_session() -> Session {
         let (_tx, rx) = tauri::async_runtime::channel(1);
         Session {
@@ -456,6 +605,9 @@ mod tests {
             sequence: 0,
             pdf_handles: Default::default(),
             model_handles: Default::default(),
+            preparation: None,
+            prepared_pdf: Default::default(),
+            prepared_models: Default::default(),
         }
     }
     fn issue(session: &mut Option<Session>, handle: &str) {
@@ -547,6 +699,8 @@ mod tests {
             let (closing, _) = watch::channel(false);
             let engine = Engine {
                 data_dir: Mutex::new(None),
+                sandbox_dir: None,
+                picking: Mutex::new(()),
                 session: Mutex::new(session),
                 closing,
             };
@@ -691,6 +845,8 @@ mod tests {
             let (closing, _) = watch::channel(false);
             let engine = Engine {
                 data_dir: Mutex::new(None),
+                sandbox_dir: None,
+                picking: Mutex::new(()),
                 session: Mutex::new(session),
                 closing,
             };

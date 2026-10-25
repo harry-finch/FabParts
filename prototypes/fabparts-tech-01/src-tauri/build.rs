@@ -12,6 +12,8 @@ fn main() {
             "get_model_status",
             "read_mesh_chunk",
             "release_model_preview",
+            "ingestion_command",
+            "choose_ingestion_files",
         ]),
     ))
     .expect("Tauri build configuration");
