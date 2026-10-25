@@ -187,7 +187,7 @@ Commandes depuis le checkout public, avec dépendances installées :
 | Python complet | `QT_QPA_PLATFORM=offscreen PYTHONPATH=src .venv/bin/pytest -q` | 461 tests |
 | Ruff | `.venv/bin/ruff check .` ; `.venv/bin/ruff format --check .` | conformes |
 | Typage | `PYTHONPATH=src .venv/bin/mypy` | 152 fichiers, aucune erreur |
-| Rust | `cd prototypes/fabparts-tech-01/src-tauri && cargo test --offline` | 11 tests |
+| Rust | `cd prototypes/fabparts-tech-01/src-tauri && cargo test --offline` | 17 tests (dont 6 de revue) |
 | Rustfmt | même dossier, `cargo fmt --check` | conforme, Rust 1.90.0 |
 | Frontend TECH | `npm --prefix prototypes/fabparts-tech-01 test` | 21 tests |
 | Frontend UX | `npm --prefix prototypes/fabparts-ux test` | 12 tests |
@@ -247,6 +247,60 @@ nouveaux contrôles (les commandes de preview ajoutées sont en français) ; pan
 mesures éventuels ; packaging/signature et validation multi-OS. Le bundle principal
 Vite dépasse son seuil d’avertissement de 500 Ko à cause du renderer PDF local ;
 son chargement peut être séparé lors d’un jalon de performance. Aucun service réseau.
+
+## Correctif de revue PR #1 — cycle de vie des handles PDF
+
+Le scénario H1/H2/H3 est reproduit par un test de régression : création de H1 et
+H2, libération de H2, puis création de H3. Avant correction, Rust conservait H2
+et évincait H1 à l’arrivée de H3, alors que Python conservait H1 et H3. Le test
+échoue avant le correctif et passe après, y compris lorsque H1 est libéré en premier.
+
+Dans `src-tauri/src/main.rs`, le traitement de réponse retire désormais le handle
+exact de `Session.pdf_handles` après un acquittement `released: true`, sous le
+même verrou de session que l’échange IPC. Une libération répétée ou d’un handle
+inconnu reste idempotente. Le traitement existant des réponses est isolé dans
+`Engine::finish_call` pour tester les transitions sans lancer de WebView ; les
+paramètres sont empruntés pendant l’échange pour conserver le handle à acquitter.
+
+Comportements examinés et conservés :
+
+- Échec métier (`DOMAIN_ERROR`, `INVALID_PARAMS`, `READ_FAILED`,
+  `RESPONSE_TOO_LARGE`) ou absence d’acquittement positif : aucune suppression
+  anticipée de l’autorisation ; une nouvelle tentative reste possible.
+- Timeout, rupture de transport, réponse invalide ou fermeture : la session est
+  abandonnée avec toutes ses autorisations, comme auparavant.
+- Expiration : Python reste l’autorité du TTL de 120 s et refuse les octets expirés.
+  IPC v1 utilise aussi `DOMAIN_ERROR` pour un offset invalide ; Rust ne déduit donc
+  pas une expiration de ce code générique ni du texte traduit de l’erreur. Un
+  identifiant expiré peut rester dans la liste Rust jusqu’à sa libération, son
+  éviction FIFO ou la fin de session, sans permettre de relire les octets côté Python.
+  Les expirations suivent l’ordre de création ; elles ne désordonnent pas la FIFO.
+- Redémarrage : l’ancienne session est retirée/arrêtée, et la nouvelle possède une
+  liste vide. Les anciens handles sont refusés par Rust avant tout échange IPC.
+
+La borne de **deux handles**, les limites de transport, les permissions et le
+protocole **v1** sont inchangés. Aucun changement UX, parseur KiCad, moteur Python
+ou architecture des previews. Les données restent en lecture seule.
+
+| Vérification du correctif | Commande | Résultat |
+| --- | --- | --- |
+| Régression avant correction | `cargo test --offline h1_h2_h3_release_order_preserves_the_remaining_handle` | Échec attendu : H1 évincé à tort |
+| Rust complet | `cargo test --offline` depuis `prototypes/fabparts-tech-01/src-tauri` | **17 réussis**, dont 6 nouveaux |
+| Format Rust | `cargo fmt --check`, même dossier, Rust 1.90.0 | Conforme |
+| Python complet | `QT_QPA_PLATFORM=offscreen PYTHONPATH=src <venv>/bin/pytest -q` depuis le checkout public | **461 réussis**, environnement Python existant |
+| Frontend TECH | `npm --prefix prototypes/fabparts-tech-01 test` | **21 réussis** |
+| Frontend UX | `npm --prefix prototypes/fabparts-ux test` | **12 réussis** |
+| Svelte TECH | `npm --prefix prototypes/fabparts-tech-01 run check` | 0 erreur / avertissement |
+
+Les nouveaux tests utilisent le traitement réel des réponses Rust, ainsi que le
+filtrage `Engine::call` avant IPC pour les handles libérés et ceux d’une session
+remplacée. Les tests Python existants vérifient le TTL, l’éviction et la libération.
+Le lancement d’un nouveau processus natif et les captures ne sont pas réexécutés
+pour ce correctif ciblé ; la validation native ci-dessus concerne les viewers
+inchangés. Deux fichiers modifiés : `src-tauri/src/main.rs` et ce rapport.
+
+**GO pour le correctif de revue** ; les réserves générales TECH-02A restent celles
+documentées plus haut. Mise à jour de la branche et de la PR #1, sans merge.
 
 ## Critères et arrêt
 

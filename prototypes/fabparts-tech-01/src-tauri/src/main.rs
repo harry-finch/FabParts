@@ -27,7 +27,7 @@ impl Session {
     async fn call(
         &mut self,
         method: &str,
-        params: Value,
+        params: &Value,
         timeout: Duration,
         closing: watch::Receiver<bool>,
     ) -> Reply {
@@ -51,7 +51,7 @@ impl Session {
     async fn exchange(
         &mut self,
         method: &str,
-        params: Value,
+        params: &Value,
         timeout: Duration,
         closing: watch::Receiver<bool>,
     ) -> Reply {
@@ -146,8 +146,17 @@ impl Engine {
             .ok_or_else(|| {
                 Failure::new("ENGINE_UNAVAILABLE", "Moteur indisponible. Redémarrez-le.")
             })?
-            .call(method, params, TIMEOUT, self.closing.subscribe())
+            .call(method, &params, TIMEOUT, self.closing.subscribe())
             .await;
+        Self::finish_call(&mut guard, method, &params, result)
+    }
+    // Apply sidecar acknowledgements while the caller still holds the session lock.
+    fn finish_call(
+        guard: &mut Option<Session>,
+        method: &str,
+        params: &Value,
+        result: Reply,
+    ) -> Reply {
         if let (Ok(value), Some(session)) = (&result, guard.as_mut()) {
             if method == "get_asset_preview" {
                 if let Some(handle) = value["handle"].as_str() {
@@ -156,6 +165,14 @@ impl Engine {
                         session.pdf_handles.pop_front();
                     }
                     session.pdf_handles.push_back(handle.to_owned());
+                }
+            } else if method == "release_preview" && value["released"].as_bool() == Some(true) {
+                if let Some(handle) = params["handle"].as_str() {
+                    // Releases can arrive out of creation order. Remove only the
+                    // acknowledged handle so the next preview cannot evict a live one.
+                    session
+                        .pdf_handles
+                        .retain(|registered| registered != handle);
                 }
             }
         }
@@ -302,7 +319,7 @@ async fn restart_session(
     let result = session
         .call(
             "health",
-            json!({}),
+            &json!({}),
             STARTUP_TIMEOUT,
             engine.closing.subscribe(),
         )
@@ -364,4 +381,197 @@ fn main() {
             });
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_session() -> Session {
+        let (_tx, rx) = tauri::async_runtime::channel(1);
+        Session {
+            child: None,
+            rx,
+            sequence: 0,
+            pdf_handles: Default::default(),
+        }
+    }
+    fn issue(session: &mut Option<Session>, handle: &str) {
+        Engine::finish_call(
+            session,
+            "get_asset_preview",
+            &json!({}),
+            Ok(json!({"status":"ready", "handle":handle})),
+        )
+        .unwrap();
+    }
+    fn release(session: &mut Option<Session>, handle: &str) {
+        Engine::finish_call(
+            session,
+            "release_preview",
+            &json!({"handle":handle}),
+            Ok(json!({"released":true})),
+        )
+        .unwrap();
+    }
+    fn handles(session: &Option<Session>) -> Vec<&str> {
+        session
+            .as_ref()
+            .unwrap()
+            .pdf_handles
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    #[test]
+    fn h1_h2_h3_release_order_preserves_the_remaining_handle() {
+        let (h1, h2, h3) = ("a".repeat(48), "b".repeat(48), "c".repeat(48));
+        // In particular, releasing H2 must not cause H3 to evict the still-live H1.
+        for (released, remaining) in [(&h2, &h1), (&h1, &h2)] {
+            let mut session = Some(empty_session());
+            issue(&mut session, &h1);
+            issue(&mut session, &h2);
+            release(&mut session, released);
+            issue(&mut session, &h3);
+            assert_eq!(handles(&session), [remaining.as_str(), h3.as_str()]);
+        }
+    }
+
+    #[test]
+    fn repeated_or_unknown_release_is_idempotent_and_fifo_stays_bounded() {
+        let (h1, h2, h3) = ("a".repeat(48), "b".repeat(48), "c".repeat(48));
+        let mut session = Some(empty_session());
+        issue(&mut session, &h1);
+        issue(&mut session, &h2);
+        release(&mut session, &h1);
+        release(&mut session, &h1);
+        release(&mut session, &h3);
+        assert_eq!(handles(&session), [h2.as_str()]);
+        issue(&mut session, &h3);
+        issue(&mut session, &h1);
+        assert_eq!(handles(&session), [h3.as_str(), h1.as_str()]);
+    }
+
+    #[test]
+    fn failed_or_unconfirmed_release_keeps_live_capabilities() {
+        let (h1, h2) = ("a".repeat(48), "b".repeat(48));
+        let mut session = Some(empty_session());
+        issue(&mut session, &h1);
+        issue(&mut session, &h2);
+        for reply in [
+            Err(Failure::new("DOMAIN_ERROR", "Release failed")),
+            Err(Failure::new("INVALID_PARAMS", "Invalid release")),
+            Err(Failure::new("READ_FAILED", "Read failed")),
+            Err(Failure::new("RESPONSE_TOO_LARGE", "Response too large")),
+            Ok(json!({"released":false})),
+            Ok(json!({})),
+        ] {
+            let failed = reply.is_err();
+            let result = Engine::finish_call(
+                &mut session,
+                "release_preview",
+                &json!({"handle":h2}),
+                reply,
+            );
+            assert_eq!(result.is_err(), failed);
+            assert_eq!(handles(&session), [h1.as_str(), h2.as_str()]);
+        }
+        release(&mut session, &h2);
+        assert_eq!(handles(&session), [h1.as_str()]);
+    }
+
+    #[test]
+    fn failed_transport_discards_all_session_capabilities() {
+        let h1 = "a".repeat(48);
+        for code in [
+            "TIMEOUT",
+            "ENGINE_IO",
+            "ENGINE_EXITED",
+            "INVALID_RESPONSE",
+            "APP_CLOSING",
+        ] {
+            let mut session = Some(empty_session());
+            issue(&mut session, &h1);
+            let result = Engine::finish_call(
+                &mut session,
+                "release_preview",
+                &json!({"handle":h1}),
+                Err(Failure::new(code, "Transport failed")),
+            );
+            assert_eq!(result.unwrap_err().code, code);
+            assert!(session.is_none());
+        }
+    }
+
+    #[test]
+    fn expired_pdf_read_preserves_other_handles_and_release_cleans_up() {
+        let (h1, h2, h3) = ("a".repeat(48), "b".repeat(48), "c".repeat(48));
+        let mut session = Some(empty_session());
+        issue(&mut session, &h1);
+        issue(&mut session, &h2);
+        let result = Engine::finish_call(
+            &mut session,
+            "read_pdf_chunk",
+            &json!({"handle":h1,"offset":0}),
+            Err(Failure::new(
+                "DOMAIN_ERROR",
+                "Aperçu PDF expiré. Rouvrez le document.",
+            )),
+        );
+        assert_eq!(result.unwrap_err().code, "DOMAIN_ERROR");
+        // IPC v1 also uses DOMAIN_ERROR for invalid offsets: do not infer expiry
+        // from this generic code or localized text. Python remains authoritative.
+        assert_eq!(handles(&session), [h1.as_str(), h2.as_str()]);
+        release(&mut session, &h1);
+        issue(&mut session, &h3);
+        assert_eq!(handles(&session), [h2.as_str(), h3.as_str()]);
+    }
+
+    #[test]
+    fn released_and_previous_session_handles_are_denied_before_ipc() {
+        tauri::async_runtime::block_on(async {
+            let (h1, h2) = ("a".repeat(48), "b".repeat(48));
+            let mut session = Some(empty_session());
+            issue(&mut session, &h1);
+            issue(&mut session, &h2);
+            release(&mut session, &h2);
+            let (closing, _) = watch::channel(false);
+            let engine = Engine {
+                data_dir: Mutex::new(None),
+                session: Mutex::new(session),
+                closing,
+            };
+            assert_eq!(
+                engine
+                    .call("read_pdf_chunk", json!({"handle":h2,"offset":0}))
+                    .await
+                    .unwrap_err()
+                    .code,
+                "INVALID_PARAMS"
+            );
+            assert!(engine.session.lock().await.is_some());
+            // The restart path takes/stops the old Session and installs a fresh one.
+            let mut guard = engine.session.lock().await;
+            guard.take().unwrap().stop().await;
+            *guard = Some(empty_session());
+            drop(guard);
+            assert_eq!(
+                engine
+                    .call("read_pdf_chunk", json!({"handle":h1,"offset":0}))
+                    .await
+                    .unwrap_err()
+                    .code,
+                "INVALID_PARAMS"
+            );
+            assert!(engine
+                .session
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .pdf_handles
+                .is_empty());
+        });
+    }
 }
