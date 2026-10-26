@@ -14,6 +14,7 @@ fn main() {
             "release_model_preview",
             "ingestion_command",
             "choose_ingestion_files",
+            "integration_command",
             "publication_query",
             "publish_version",
             "rebuild_publication",

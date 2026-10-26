@@ -13,6 +13,7 @@ from kipartmanager import __version__
 from kipartmanager.application.asset_previews import AssetPreviews
 from kipartmanager.application.catalogue_reader import CatalogueReader
 from kipartmanager.application.ingestion import Ingestion
+from kipartmanager.application.kicad_integration import KiCadIntegration
 from kipartmanager.application.publication_review import PublicationReview
 from kipartmanager.application.validation_review import ReportChanged, ValidationReview
 from kipartmanager.domain.entities import DomainError, PartState
@@ -22,6 +23,10 @@ from kipartmanager.infrastructure.user_workspace import UserWorkspace
 from kipartmanager.ingestion_ipc import FIELDS as INGESTION_METHODS
 from kipartmanager.ingestion_ipc import dispatch
 from kipartmanager.ingestion_ipc import validate as validate_ingestion
+from kipartmanager.integration_ipc import METHODS as INTEGRATION_METHODS
+from kipartmanager.integration_ipc import WRITES as INTEGRATION_WRITES
+from kipartmanager.integration_ipc import dispatch as dispatch_integration
+from kipartmanager.integration_ipc import validate as validate_integration
 from kipartmanager.ports.previews import PDF_LIMIT
 from kipartmanager.publication_ipc import METHODS as PUBLICATION_METHODS
 from kipartmanager.publication_ipc import WRITES as PUBLICATION_WRITES
@@ -127,6 +132,7 @@ def respond(
     workspace: UserWorkspace | None = None,
     review: ValidationReview | None = None,
     publications: PublicationReview | None = None,
+    integration: KiCadIntegration | None = None,
 ) -> dict[str, Any]:
     identity = None
     try:
@@ -149,6 +155,31 @@ def respond(
         method = request["method"]
         if not isinstance(method, str):
             raise ProtocolError("INVALID_REQUEST", "Nom de commande requis.")
+        if method in INTEGRATION_METHODS:
+            if integration is None:
+                raise ProtocolError("READ_FAILED", "Integration unavailable")
+            if method in INTEGRATION_WRITES and (
+                ingestion is None or bool(workspace and workspace.requires_restart)
+            ):
+                raise ProtocolError("READ_ONLY", "Integration writes unavailable")
+            if ingestion is not None and ingestion.preparation is not None:
+                raise ProtocolError("BUSY", "Finish the active preparation first")
+            try:
+                params = validate_integration(method, request["params"])
+            except (ValueError, TypeError, AttributeError) as error:
+                raise ProtocolError("INVALID_PARAMS", str(error)) from error
+            try:
+                integration_result = dispatch_integration(integration, method, params)
+            except OSError as error:
+                raise ProtocolError(
+                    "INTEGRATION_IO", error.strerror or type(error).__name__
+                ) from error
+            return {
+                "protocol_version": 1,
+                "request_id": identity,
+                "ok": True,
+                "result": integration_result,
+            }
         if method in PUBLICATION_METHODS:
             if publications is None:
                 raise ProtocolError("READ_FAILED", "Publications unavailable")
@@ -295,6 +326,7 @@ def serve(
     workspace: UserWorkspace | None = None,
     review: ValidationReview | None = None,
     publications: PublicationReview | None = None,
+    integration: KiCadIntegration | None = None,
 ) -> None:
     while raw := source.readline(MAX_REQUEST + 1):
         if len(raw) > MAX_REQUEST:
@@ -306,7 +338,15 @@ def serve(
             response = error_response(None, "INVALID_REQUEST", "Message JSONL incomplet.")
         else:
             response = respond(
-                raw, reader, previews, ingestion, schema, workspace, review, publications
+                raw,
+                reader,
+                previews,
+                ingestion,
+                schema,
+                workspace,
+                review,
+                publications,
+                integration,
             )
         encoded = json.dumps(response, ensure_ascii=False, allow_nan=False).encode()
         if len(encoded) > MAX_RESPONSE:

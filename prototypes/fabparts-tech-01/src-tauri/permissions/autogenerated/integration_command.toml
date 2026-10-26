@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-integration-command"
+description = "Enables the integration_command command without any pre-configured scope."
+commands.allow = ["integration_command"]
+
+[[permission]]
+identifier = "deny-integration-command"
+description = "Denies the integration_command command without any pre-configured scope."
+commands.deny = ["integration_command"]
