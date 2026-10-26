@@ -18,6 +18,7 @@
     "allow-read-mesh-chunk",
     "allow-release-model-preview",
     "allow-ingestion-command",
+    "allow-external-command",
     "allow-choose-ingestion-files",
     "allow-integration-command",
     "allow-publication-query",

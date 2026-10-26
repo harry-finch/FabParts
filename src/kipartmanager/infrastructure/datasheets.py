@@ -1,13 +1,17 @@
 """Explicitly authorized manufacturer URLs, bounded PDFs and machine-local TOML."""
 
+import http.client
+import ipaddress
 import json
 import os
+import socket
+import ssl
 import tempfile
 import time
 import tomllib
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request, build_opener
 
 from kipartmanager.domain.datasheets import DatasheetConfiguration, DatasheetDownload
 from kipartmanager.domain.entities import DomainError
@@ -63,6 +67,50 @@ class RejectRedirect(HTTPRedirectHandler):
         )
 
 
+class PublicHTTPSConnection(http.client.HTTPSConnection):
+    """Resolve once, reject non-public answers, connect to a checked numeric address.
+
+    TLS still verifies the original DNS name. No proxy or second host resolution
+    can redirect this request to an internal service (including DNS rebinding).
+    """
+
+    def connect(self) -> None:
+        addresses = socket.getaddrinfo(self.host, 443, type=socket.SOCK_STREAM)
+        if not addresses:
+            raise DomainError("Constructeur sans adresse publique.")
+        for _, _, _, _, address in addresses:
+            ip = ipaddress.ip_address(address[0])
+            if (
+                not ip.is_global
+                or ip.is_multicast
+                or ip.is_reserved
+                or isinstance(ip, ipaddress.IPv6Address)
+                and (
+                    ip.is_site_local
+                    or ip.ipv4_mapped is not None
+                    or ip.sixtofour is not None
+                    or ip.teredo is not None
+                )
+            ):
+                raise DomainError("Destination réseau privée ou non publique refusée.")
+        family, socktype, proto, _, address = addresses[0]
+        connection = socket.socket(family, socktype, proto)
+        try:
+            connection.settimeout(self.timeout)
+            connection.connect(address)  # Numeric sockaddr from the validated resolution.
+            self.sock = ssl.create_default_context().wrap_socket(
+                connection, server_hostname=self.host
+            )
+        except BaseException:
+            connection.close()
+            raise
+
+
+class PublicHTTPSHandler(HTTPSHandler):
+    def https_open(self, req: Request) -> http.client.HTTPResponse:
+        return self.do_open(PublicHTTPSConnection, req)
+
+
 class ManufacturerPDFs:
     def download(self, url: str, config: DatasheetConfiguration) -> DatasheetDownload:
         config.authorize(url)
@@ -70,7 +118,9 @@ class ManufacturerPDFs:
             request = Request(
                 url, headers={"User-Agent": "KiPartManager-M10", "Accept-Encoding": "identity"}
             )
-            with build_opener(RejectRedirect()).open(request, timeout=8) as response:
+            with build_opener(ProxyHandler({}), PublicHTTPSHandler(), RejectRedirect()).open(
+                request, timeout=8
+            ) as response:
                 limit = 32 * 1024 * 1024
                 content = bytearray()
                 deadline = time.monotonic() + 20

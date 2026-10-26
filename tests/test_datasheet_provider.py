@@ -115,3 +115,105 @@ def test_configuration_roundtrip_and_recovery(tmp_path: Path) -> None:
         settings.load()
     settings.save(DatasheetConfiguration())
     assert settings.load() == DatasheetConfiguration()
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "127.0.0.1",
+        "10.0.0.1",
+        "192.168.1.1",
+        "169.254.169.254",
+        "100.64.0.1",
+        "0.0.0.0",
+        "224.0.0.1",
+        "::1",
+        "fc00::1",
+        "fec0::1",
+        "4000::1",
+        "fe80::1",
+        "::ffff:127.0.0.1",
+        "2002:7f00:1::",
+    ],
+)
+def test_private_dns_answers_refused_before_connect(
+    monkeypatch: pytest.MonkeyPatch, address: str
+) -> None:
+    import socket
+
+    from kipartmanager.infrastructure.datasheets import PublicHTTPSConnection
+
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 443))],
+    )
+
+    def refused(*args: object, **kwargs: object) -> None:
+        pytest.fail("No socket may open for a private destination")
+
+    monkeypatch.setattr(socket, "socket", refused)
+    with pytest.raises(DomainError, match="non publique"):
+        PublicHTTPSConnection("docs.maker.example", timeout=8).connect()
+
+
+def test_dns_is_resolved_once_and_numeric_connection_keeps_tls_hostname(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import socket
+    import ssl
+
+    from kipartmanager.infrastructure.datasheets import PublicHTTPSConnection
+
+    resolved: list[str] = []
+    connected: list[object] = []
+
+    def resolve(host: str, port: int, **kwargs: object) -> list[object]:
+        resolved.append(host)
+        # A second resolution would be hostile. Only the first answer may be used.
+        return [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("93.184.216.34" if len(resolved) == 1 else "127.0.0.1", 443),
+            )
+        ]
+
+    class Socket:
+        def settimeout(self, value: float) -> None:
+            assert value == 8
+
+        def connect(self, address: object) -> None:
+            connected.append(address)
+
+        def close(self) -> None:
+            pass
+
+    class TLS:
+        def wrap_socket(self, value: object, *, server_hostname: str) -> object:
+            assert server_hostname == "docs.maker.example"
+            return value
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(socket, "socket", lambda *a: Socket())
+    monkeypatch.setattr(ssl, "create_default_context", lambda: TLS())
+    connection = PublicHTTPSConnection("docs.maker.example", timeout=8)
+    connection.connect()
+    assert resolved == ["docs.maker.example"]
+    assert connected == [("93.184.216.34", 443)]
+
+
+def test_mixed_public_private_dns_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket
+
+    from kipartmanager.infrastructure.datasheets import PublicHTTPSConnection
+
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443)), (2, 1, 6, "", ("10.1.1.1", 443))],
+    )
+    with pytest.raises(DomainError, match="non publique"):
+        PublicHTTPSConnection("docs.maker.example", timeout=8).connect()

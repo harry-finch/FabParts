@@ -88,6 +88,10 @@ export class IngestionController {
       this.emit({session,fields,selections:session.selections,candidates:session.candidates,busy:false});
     }catch(error){if(epoch===this.epoch)this.emit({error:this.error(error),busy:false});}
   }
+  addExternal(value:{file:FileItem;candidate:Candidate}) {
+    this.emit({files:[...this.state.files.filter(f=>f.handle!==value.file.handle),value.file],
+      candidates:this.merge([value.candidate]),previewing:{...this.state.previewing,[value.candidate.role]:value.candidate.token}});
+  }
   async pick() {
     const prep=this.state.session?.preparation;if(!prep||this.state.busy)return;
     const epoch=this.epoch;this.emit({busy:true,error:''});

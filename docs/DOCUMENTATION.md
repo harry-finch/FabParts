@@ -114,3 +114,16 @@ Pas de recherche automatique de datasheet, extraction de métadonnées PDF, serv
 tiers distant, IA ni génération. Les téléchargements ont été vérifiés avec
 réponses déterministes ; aucun domaine constructeur réel n’a été autorisé dans
 les données utilisateur pendant ce checkpoint.
+
+### Intégration FabParts TECH-06B
+
+Dans le wizard Tauri, le PDF téléchargé reste temporaire jusqu'à la confirmation
+finale. Le consentement est explicite pour chaque URL ; la carte permet d'examiner
+le document, puis de le retenir séparément. Ce parcours crée le choix DATASHEET
+existant, sans inventer de fiche documentaire ni de métadonnées extraites.
+Le transport M10 vérifie désormais toutes les réponses DNS et se connecte à une
+adresse publique figée, avec TLS sur le nom original, sans proxy d'environnement.
+Les destinations privées et toutes les redirections sont refusées. Les budgets
+8 s par attente / 20 s de lecture et 32 Mio réseau restent inchangés ; le wizard
+refuse les fichiers dépassant sa limite propre de 16 Mio. L'annulation du job
+révoque le résultat immédiatement ; elle ne tue pas une lecture HTTP en cours.

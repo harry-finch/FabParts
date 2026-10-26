@@ -13,6 +13,7 @@ fn main() {
             "read_mesh_chunk",
             "release_model_preview",
             "ingestion_command",
+            "external_command",
             "choose_ingestion_files",
             "integration_command",
             "publication_query",

@@ -7,9 +7,12 @@ from pathlib import Path
 
 from sqlalchemy import Engine, text
 
+from kipartmanager.application.asset_imports import AssetImports
 from kipartmanager.application.asset_previews import AssetPreviews
 from kipartmanager.application.catalogue import Catalogue
 from kipartmanager.application.catalogue_reader import CatalogueReader
+from kipartmanager.application.documentation import Documentation
+from kipartmanager.application.external_sources import ExternalSources
 from kipartmanager.application.ingestion import Ingestion
 from kipartmanager.application.kicad import KiCadLibraries
 from kipartmanager.application.kicad_integration import KiCadIntegration
@@ -17,13 +20,15 @@ from kipartmanager.application.model_jobs import ModelJobs
 from kipartmanager.application.publication_review import PublicationReview
 from kipartmanager.application.publications import Publications
 from kipartmanager.application.publisher import LocalPublisher
+from kipartmanager.application.remote_kicad import RemoteLibraries
 from kipartmanager.application.resolver import LocalResolver
 from kipartmanager.application.validation import LocalValidation
 from kipartmanager.application.validation_review import ValidationReview
 from kipartmanager.headless_ipc import serve
 from kipartmanager.infrastructure.asset_store import LocalAssetStore
 from kipartmanager.infrastructure.catalogue import SqliteCatalogue
-from kipartmanager.infrastructure.documentation import SqliteDocumentation
+from kipartmanager.infrastructure.datasheets import ManufacturerPDFs, ManufacturerSettings
+from kipartmanager.infrastructure.documentation import LocalProposalReader, SqliteDocumentation
 from kipartmanager.infrastructure.ingestion_sandbox import open_sandbox
 from kipartmanager.infrastructure.ingestion_transactions import SqliteIngestionTransactions
 from kipartmanager.infrastructure.kicad_index import LocalKiCadIndex
@@ -34,6 +39,7 @@ from kipartmanager.infrastructure.prepared_files import LocalPreparedFiles
 from kipartmanager.infrastructure.publications import LocalPublications
 from kipartmanager.infrastructure.readonly_catalogue import open_copy
 from kipartmanager.infrastructure.readonly_previews import ReadonlyPreviews
+from kipartmanager.infrastructure.remote_kicad import OfficialGitLab, TomlRemoteSettings
 from kipartmanager.infrastructure.resource_probe import LocalResourceProbe
 from kipartmanager.infrastructure.user_workspace import UserWorkspace, open_personal
 from kipartmanager.infrastructure.validation_reports import SqliteValidationReports
@@ -108,6 +114,7 @@ def main() -> int:
         )
         previews = AssetPreviews(reader, ReadonlyPreviews(data_dir), ModelJobs(convert_mesh))
         ingestion = None
+        external = None
         if (sandbox or personal) and store:
             libraries = KiCadLibraries(LocalKiCadIndex(data_dir))
             ingestion = Ingestion(
@@ -120,6 +127,19 @@ def main() -> int:
                 previews,
                 libraries,
                 LocalResourceProbe(store, LocalKiCadIndex(data_dir)),
+            )
+            external = ExternalSources(
+                ingestion,
+                RemoteLibraries(
+                    TomlRemoteSettings(data_dir), AssetImports(catalogue, store), OfficialGitLab()
+                ),
+                Documentation(
+                    catalogue,
+                    documentation,
+                    LocalProposalReader(),
+                    ManufacturerSettings(data_dir),
+                    ManufacturerPDFs(),
+                ),
             )
         with engine.connect() as connection:
             schema = str(connection.scalar(text("SELECT version_num FROM alembic_version")))
@@ -135,8 +155,11 @@ def main() -> int:
                 review,
                 publications,
                 integration,
+                external,
             )
         finally:
+            if external:
+                external.close()
             previews.clear()
             if ingestion:
                 ingestion.close()

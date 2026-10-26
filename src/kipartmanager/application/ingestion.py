@@ -85,13 +85,16 @@ class PendingCandidate:
     prepared: PreparedFile | None = None
     symbol: str = ""
     candidate: Candidate | None = None
+    origin: AssetOrigin = AssetOrigin.USER_PROVIDED
+    source: str = ""
 
     def dto(self) -> dict[str, Any]:
         return {
             "token": self.token,
             "role": self.role.value,
             "name": self.name,
-            "origin": self.candidate.origin if self.candidate else "USER_PROVIDED",
+            "origin": self.candidate.origin if self.candidate else self.origin.value,
+            **({"source": self.source} if self.source else {}),
             "storage": "staged"
             if self.prepared
             else "managed"
@@ -259,6 +262,47 @@ class Ingestion:
                 - {""}
             ),
         }
+
+    def stage_external(
+        self,
+        preparation: str,
+        content: bytes,
+        filename: str,
+        name: str,
+        origin: AssetOrigin,
+        source: str,
+        symbol: str = "",
+    ) -> dict[str, Any]:
+        """Stage verified provider bytes; never create an Asset before confirmation."""
+        prep = self._preparation(preparation)
+        if len(content) > 16 * 1024 * 1024:
+            raise DomainError(
+                "Ressource supérieure à 16 Mio : préparation refusée (limite M9/M10 : 32 Mio)."
+            )
+        handle = self.files.start(preparation, filename, len(content))
+        try:
+            for offset in range(0, len(content), 8192):
+                self.files.append(preparation, handle, offset, content[offset : offset + 8192])
+            staged = self.files.finish(
+                preparation, handle, hashlib.sha256(content).hexdigest(), symbol
+            )
+            pending = self._candidate(
+                prep,
+                handle + ":" + symbol,
+                PendingCandidate(
+                    secrets.token_hex(24),
+                    staged.file.asset_type,
+                    name,
+                    staged,
+                    symbol,
+                    origin=origin,
+                    source=source,
+                ),
+            )
+            return {"file": asdict(staged), "candidate": pending.dto()}
+        except BaseException:
+            self.files.discard(preparation, handle)
+            raise
 
     def search(self, preparation: str, role: str, query: str = "") -> dict[str, Any]:
         prep = self._preparation(preparation)
@@ -438,7 +482,7 @@ class Ingestion:
         metadata = pending.dto()
         if pending.prepared:
             content = self.files.preview(preparation, pending.prepared.handle, pending.symbol)
-            source = pending.prepared.file.original_name
+            source = pending.source or pending.prepared.file.original_name
         else:
             assert pending.candidate is not None
             preview = self.previews.previews.inspect(pending.candidate.choice)
@@ -648,8 +692,8 @@ class Ingestion:
                     self.files.content(prep.handle, staged.handle),
                     staged.file.original_name,
                     name=selection.name,
-                    origin=AssetOrigin.USER_PROVIDED,
-                    source_reference=staged.file.original_name,
+                    origin=selection.origin,
+                    source_reference=selection.source or staged.file.original_name,
                     symbol_name=selection.symbol,
                 )
                 candidate = Candidate(
