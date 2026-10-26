@@ -16,13 +16,13 @@ async function save(){saving=true;error='';message='';try{apply(await ai<AIConfi
  <p class="secondary">{tr('Désactivée par défaut. Aucun appel, découverte ou téléchargement de modèle automatique.','Disabled by default. No automatic requests, discovery or model downloads.')}</p>
  <fieldset disabled={disabled||saving||!loaded}>
  <label>{tr('Fournisseur','Provider')}<select class="input" value={backend} onchange={e=>preset(e.currentTarget.value as AIConfig['backend'])}><option value="ollama">Ollama local</option><option value="gemini">Gemini</option><option value="chat">{tr('API compatible OpenAI','OpenAI compatible API')}</option></select></label>
- <label>Endpoint<input class="input" bind:value={endpoint} maxlength="512"/></label>
- <label>{tr('Modèle déjà disponible','Existing model')}<input class="input" bind:value={model} maxlength="128"/></label>
- <label class="check"><input type="checkbox" bind:checked={enabled}/>{tr('Activer l’assistance IA','Enable AI assistance')}</label>
+ <label>Endpoint<input class="input" bind:value={endpoint} oninput={()=>availability=''} maxlength="512"/></label>
+ <label>{tr('Modèle déjà disponible','Existing model')}<input class="input" bind:value={model} oninput={()=>availability=''} maxlength="128"/></label>
+ <label class="check"><input type="checkbox" bind:checked={enabled} onchange={()=>availability=''}/>{tr('Activer l’assistance IA','Enable AI assistance')}</label>
  <p class="secondary">{backend==='ollama'?tr('Modèle local déjà installé requis. Aucun téléchargement lancé par FabParts.','An installed local model is required. FabParts never downloads it.'):tr('Clé définie dans l’environnement de lancement : ','Key supplied through the launch environment: ')+(backend==='gemini'?'GEMINI_API_KEY':'KIPART_AI_API_KEY')+'. '+tr('Aucun champ ni stockage de clé dans FabParts.','No key input or key storage in FabParts.')}</p>
  <button class="btn" onclick={save}>{tr('Enregistrer les paramètres IA','Save AI settings')}</button>
  </fieldset>
- {#if availability}<p role="status">{availability==='disabled'?tr('Assistance désactivée.','Assistance disabled.'):availability==='missing_key'?tr('Clé absente du moteur. Relancer depuis l’environnement configuré.','Key missing in the engine. Relaunch from the configured environment.'):tr('Configuration prête. Le service sera contacté uniquement après votre autorisation.','Configuration ready. The service is contacted only after your authorization.')}</p>{/if}
+ {#if availability}<p role="status">{availability==='disabled'?tr('Assistance désactivée.','Assistance disabled.'):availability==='missing_key'?tr('Clé absente du moteur. Relancer depuis l’environnement configuré.','Key missing in the engine. Relaunch from the configured environment.'):backend==='ollama'?tr('Configuration locale enregistrée ; service et modèle non vérifiés.','Local configuration saved; service and model not checked.'):tr('Clé détectée par le moteur. Sa validité, le quota et l’accès au modèle ne sont pas vérifiés avant une requête autorisée.','Key detected by the engine. Validity, quota and model access are not checked before an authorised request.')}</p>{/if}
  {#if message}<p role="status">{message}</p>{/if}{#if error}<p class="error" role="alert">{error}</p>{/if}
 </section>
 <style>

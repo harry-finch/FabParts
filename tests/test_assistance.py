@@ -175,6 +175,7 @@ def test_http_contract_and_secret_routing(
 
     class Opener:
         def open(self, req: Any, timeout: int) -> Response:
+            assert timeout == (120 if config.backend is AssistanceBackend.GEMINI else 30)
             captured.append(req)
             return Response(json.dumps(envelope).encode())
 
@@ -332,3 +333,92 @@ def test_revoked_activation_discards_in_flight_suggestions(tmp_path: Path) -> No
     service = Assistance(settings, RevokingAssistant())
     with pytest.raises(DomainError, match="pendant"):
         service.suggest(request(), GEMINI, consent=True)
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        GEMINI,
+        OLLAMA,
+        AssistanceConfiguration(True, "https://api.example/chat/completions", "fixture"),
+    ],
+)
+@pytest.mark.parametrize(
+    "status,code",
+    [
+        (400, "bad_request"),
+        (401, "authentication"),
+        (403, "permission"),
+        (404, "model_or_endpoint"),
+        (429, "rate_limit"),
+        (500, "provider_unavailable"),
+        (418, "http_error"),
+    ],
+)
+def test_safe_http_diagnostics(
+    config: AssistanceConfiguration, status: int, code: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import kipartmanager.infrastructure.assistance as module
+    from kipartmanager.domain.assistance import AssistanceFailure
+
+    monkeypatch.setenv("GEMINI_API_KEY", SECRET)
+    monkeypatch.setenv("KIPART_AI_API_KEY", SECRET)
+
+    class Body(io.BytesIO):
+        def read(self, *args: Any, **kwargs: Any) -> bytes:
+            raise AssertionError("Never read an error body")
+
+    class Opener:
+        def open(self, req: Any, timeout: int) -> io.BytesIO:
+            raise HTTPError(req.full_url, status, SECRET, Message(), Body(SECRET.encode()))
+
+    monkeypatch.setattr(module, "build_opener", lambda *handlers: Opener())
+    with pytest.raises(AssistanceFailure) as caught:
+        ChatAssistance().suggest(request(), config)
+    assert caught.value.code.value == code and caught.value.http_status == status
+    assert SECRET not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "case,code",
+    [
+        ("timeout", "timeout"),
+        ("wrapped_timeout", "timeout"),
+        ("network", "network"),
+        ("empty", "no_suggestions"),
+        ("invalid", "invalid_response"),
+        ("blocked", "blocked"),
+        ("truncated", "incomplete"),
+        ("huge", "too_large"),
+    ],
+)
+def test_safe_response_diagnostics(case: str, code: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    import kipartmanager.infrastructure.assistance as module
+    from kipartmanager.domain.assistance import AssistanceFailure
+
+    monkeypatch.setenv("GEMINI_API_KEY", SECRET)
+    envelope: dict[str, Any] = {
+        "candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": '{"values":{}}'}]}}]
+    }
+    if case == "invalid":
+        envelope["candidates"][0]["content"]["parts"][0]["text"] = SECRET
+    if case == "blocked":
+        envelope = {"promptFeedback": {"blockReason": "SAFETY"}}
+    if case == "truncated":
+        envelope["candidates"][0]["finishReason"] = "MAX_TOKENS"
+
+    class Opener:
+        def open(self, req: Any, timeout: int) -> io.BytesIO:
+            if case == "timeout":
+                raise TimeoutError(SECRET)
+            if case == "wrapped_timeout":
+                raise URLError(TimeoutError(SECRET))
+            if case == "network":
+                raise URLError(SECRET)
+            return io.BytesIO(b"x" * 300000 if case == "huge" else json.dumps(envelope).encode())
+
+    monkeypatch.setattr(module, "build_opener", lambda *handlers: Opener())
+    with pytest.raises(AssistanceFailure) as caught:
+        ChatAssistance().suggest(request(), GEMINI)
+    assert caught.value.code.value == code and caught.value.http_status is None
+    assert SECRET not in str(caught.value)

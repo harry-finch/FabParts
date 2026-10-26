@@ -369,3 +369,26 @@ def test_unicode_secret_and_provider_echo_are_rejected(
     assert len(echoed) == 1
     assert result["status"] == "error" and sentinel not in json.dumps(result, ensure_ascii=False)
     assert service.identification(id)["history"] == []
+
+
+@pytest.mark.parametrize("typed", [True, False])
+def test_job_diagnostic_transmits_only_code_and_status(
+    ingestion: Ingestion, tmp_path: Path, typed: bool
+) -> None:
+    from kipartmanager.domain.assistance import AssistanceErrorCode, AssistanceFailure
+
+    service, provider, id = compose(ingestion, tmp_path)
+    service.assistance.configure(OLLAMA)
+    provider.error = (
+        AssistanceFailure(AssistanceErrorCode.AUTHENTICATION, SECRET, 401)
+        if typed
+        else RuntimeError(SECRET)
+    )
+    p = service.prepare(id, "context", False)
+    result = ready(service, id, p["handle"])
+    assert result["error"] == {
+        "code": "authentication" if typed else "unknown",
+        "http_status": 401 if typed else None,
+    }
+    assert SECRET not in json.dumps(result)
+    assert service.identification(id)["history"] == []

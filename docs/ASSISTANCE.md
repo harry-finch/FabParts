@@ -127,7 +127,7 @@ et [le JSON mode](https://developers.openai.com/api/docs/guides/structured-outpu
 - Réponse bornée à 256 Kio ; JSON de suggestions jusqu’à 20 000 caractères,
   quatre champs connus au maximum, chacun de 4 096 caractères. Champs inconnus,
   types incorrects, clés dupliquées, blocs Markdown et réponses incomplètes refusés.
-- Timeout socket 30 s pour Gemini/Ollama, 8 s pour autres Chat Completions ; budget
+- Timeout socket 120 s pour Gemini, 30 s pour Ollama, 8 s pour autres Chat Completions ; budget
   de lecture vérifié entre les lectures, 30 s. Pas de retry automatique, y compris
   HTTP 429. Les erreurs affichées ne reprennent pas le corps ou les secrets.
 - Requête/contexte/réponse ne vont dans aucun log ou manifest. Les métadonnées
@@ -179,3 +179,55 @@ La qualification TECH-06C (simulations, inspection native et limites des essais
 réels) est détaillée dans [le rapport](FABPARTS_2_TECH_06C.md). Les constatations
 historiques M11 ci-dessus ne constituent pas une qualification live d'un compte
 Gemini/OpenAI ou d'un modèle Ollama installé.
+
+## Diagnostics d'analyse (Tauri)
+
+Le job renvoie un code stable autorisé et, en cas de refus HTTP, le statut numérique.
+L'interface traduit le constat et le prochain geste en FR/EN : clé absente,
+authentification (401), droits (403), modèle/endpoint introuvable (404), quota ou
+limitation (429), demande invalide (400), serveur, réseau/TLS, timeout,
+redirection refusée, réponse trop grande, blocage fournisseur, sortie tronquée,
+JSON/champs invalides, ou réponse structurée sans suggestion. Un HTTP 400 ne
+permet pas à lui seul de conclure que la clé est valide ou invalide. Les erreurs
+inconnues conservent un repli neutre, sans refléter l'exception.
+
+Seuls code et statut passent dans l'IPC : aucun corps d'erreur fournisseur, texte
+d'exception, clé ou contexte. Aucun diagnostic n'est ajouté à l'historique M10.
+Pas de nouvel essai automatique ; le texte saisi reste disponible et tout nouvel
+envoi nécessite préparation et consentement. Modifier le contexte efface le
+diagnostic précédent. Annulation et révision conservent les protections TECH-06C.
+
+Les Paramètres distinguent « clé détectée par le moteur » et validité de la clé,
+quota ou accès au modèle, qui ne sont pas vérifiés avant une requête autorisée.
+La clé n'est toujours pas enregistrée par FabParts : les deux variables existantes
+doivent être définies dans l'environnement de lancement. Aucun test réseau au
+démarrage ni bouton de vérification avec envoi implicite.
+
+Vérification de cette correction : 683 tests Python avec FreeCAD, dont les refus
+HTTP simulés des trois backends et les diagnostics de jobs sans fuite ; 101 tests
+frontend, dont traduction, repli sûr et effacement après édition. Ruff et mypy
+conformes. Aucun nouvel appel à un fournisseur réel pour établir ces diagnostics.
+
+Bundle ARM64 reconstruit et inspecté nativement : clé factice détectée dans les
+Paramètres Gemini sans appel, puis deux requêtes explicites vers une fixture
+Ollama loopback (HTTP 401 et JSON sans suggestion), en FR sombre et EN clair,
+aux largeurs 901/1440/1512 px logiques. Diagnostic effacé après édition, texte
+conservé et aucun retry. Base de qualification identique après les deux échecs ;
+treize racines personnelles/antérieures inchangées. Fermeture coopérative et
+fixture arrêtée. Ces essais ne diagnostiquent pas rétroactivement l'échec signalé
+avec l'ancienne version et ne qualifient aucun compte fournisseur réel.
+
+### Attente Gemini
+
+Après un délai dépassé avec Gemini 3.8 Flash, l’attente socket Gemini passe de
+30 à 120 secondes. Les limites Ollama/Chat et le timeout IPC de 8 secondes restent
+inchangés : le job est asynchrone, la navigation et l’annulation logique restent
+disponibles. Le budget de lecture de 30 secondes est toujours contrôlé entre
+blocs ; le timeout socket n’est pas une durée maximale de bout en bout. Aucun
+retry ni augmentation du budget de tokens ou changement de modèle.
+
+Le contrôle DNS/TCP/TLS sans clé vers Google a réussi sur le poste. Il ne prouve
+ni l’autorisation de la clé, ni la disponibilité du modèle, ni la cause exacte de
+l’échec précédent. Aucun appel d’inférence réel n’a été relancé. La documentation
+[Google](https://ai.google.dev/gemini-api/docs/troubleshooting#higher-latency-or-token-usage-with-thinking-models)
+confirme une latence supérieure possible avec le raisonnement des modèles 3.x.

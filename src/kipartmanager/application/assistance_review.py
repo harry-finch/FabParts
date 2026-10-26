@@ -14,6 +14,8 @@ from kipartmanager.application.documentation import Documentation
 from kipartmanager.domain.assistance import (
     AssistanceBackend,
     AssistanceConfiguration,
+    AssistanceErrorCode,
+    AssistanceFailure,
     AssistanceRequest,
 )
 from kipartmanager.domain.documentation import Identification, MetadataField, MetadataProposal
@@ -31,6 +33,8 @@ class AssistanceSession:
     status: str = "prepared"
     proposal: MetadataProposal | None = None
     cancelled: bool = False
+    error_code: AssistanceErrorCode | None = None
+    http_status: int | None = None
 
 
 class AssistanceReview:
@@ -150,6 +154,7 @@ class AssistanceReview:
         return {"status": "loading"}
 
     def _work(self, session: AssistanceSession) -> None:
+        code, http_status = None, None
         try:
             result = self.assistance.suggest(session.request, session.config, consent=True)
             if result.source.origin is not AssetOrigin.GENERATED_AI or any(
@@ -158,12 +163,24 @@ class AssistanceReview:
                 raise DomainError("Invalid suggestion")
             self.protect(json.dumps(asdict(result), ensure_ascii=False))
             status = "ready"
+        except AssistanceFailure as error:
+            # Serialize an allowlisted code/status only, never exception text or body.
+            code = (
+                error.code
+                if isinstance(error.code, AssistanceErrorCode)
+                else AssistanceErrorCode.UNKNOWN
+            )
+            if type(error.http_status) is int and 100 <= error.http_status <= 599:
+                http_status = error.http_status
+            result, status = None, "error"
         except Exception:
             # Never reflect provider exception bodies, context, raw response or secrets.
             result, status = None, "error"
+            code = AssistanceErrorCode.UNKNOWN
         with self.lock:
             if self.session is session and not session.cancelled:
                 session.proposal, session.status = result, status
+                session.error_code, session.http_status = code, http_status
 
     def status(self, id: str, handle: str) -> dict[str, Any]:
         session = self._current(id, handle)
@@ -171,6 +188,9 @@ class AssistanceReview:
             proposal = session.proposal
             return {
                 "status": session.status,
+                "error": {"code": session.error_code.value, "http_status": session.http_status}
+                if session.error_code
+                else None,
                 "rows": [
                     {
                         "field": v.field.value,

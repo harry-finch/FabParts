@@ -14,6 +14,8 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 from kipartmanager.domain.assistance import (
     AssistanceBackend,
     AssistanceConfiguration,
+    AssistanceErrorCode,
+    AssistanceFailure,
     AssistanceRequest,
 )
 from kipartmanager.domain.documentation import (
@@ -23,6 +25,8 @@ from kipartmanager.domain.documentation import (
     MetadataSource,
 )
 from kipartmanager.domain.entities import AssetOrigin, DomainError
+
+GEMINI_TIMEOUT = 120
 
 SYSTEM = (
     "Suggest electronic component identification from the supplied context only. "
@@ -82,8 +86,9 @@ class NoRedirect(HTTPRedirectHandler):
     def redirect_request(
         self, req: Request, fp: object, code: int, msg: str, headers: object, newurl: str
     ) -> None:
-        raise DomainError(
-            "Redirection IA refusée ; aucun secret transféré à une autre destination."
+        raise AssistanceFailure(
+            AssistanceErrorCode.REDIRECT,
+            "Redirection IA refusée ; aucun secret transféré à une autre destination.",
         )
 
 
@@ -113,7 +118,10 @@ def parse_suggestions(raw: str) -> tuple[FieldValue, ...]:
             value.value.encode("utf-8")  # Reject unpaired JSON surrogates before IPC/history.
         return proposed
     except (ValueError, TypeError, AttributeError):
-        raise DomainError("Réponse IA structurée invalide ; aucun changement enregistré.") from None
+        raise AssistanceFailure(
+            AssistanceErrorCode.INVALID_RESPONSE,
+            "Réponse IA structurée invalide ; aucun changement enregistré.",
+        ) from None
 
 
 class ChatAssistance:
@@ -140,7 +148,10 @@ class ChatAssistance:
         gemini = config.backend is AssistanceBackend.GEMINI
         secret = self.secret(config)
         if not local and not secret.strip():
-            raise DomainError("Secret IA absent ; identification locale disponible.")
+            raise AssistanceFailure(
+                AssistanceErrorCode.MISSING_KEY,
+                "Secret IA absent ; identification locale disponible.",
+            )
         if secret and any(
             secret in value for value in (config.endpoint, config.model, context.payload)
         ):
@@ -183,7 +194,7 @@ class ChatAssistance:
         )
         try:
             with build_opener(NoRedirect(), ProxyHandler({}) if local else ProxyHandler()).open(
-                request, timeout=30 if local or gemini else 8
+                request, timeout=GEMINI_TIMEOUT if gemini else 30 if local else 8
             ) as response:
                 content = bytearray()
                 deadline = time.monotonic() + 30
@@ -191,33 +202,76 @@ class ChatAssistance:
                     chunk = response.read(min(65536, 256 * 1024 + 1 - len(content)))
                     content.extend(chunk)
                     if len(content) > 256 * 1024:
-                        raise DomainError("Réponse IA trop volumineuse.")
+                        raise AssistanceFailure(
+                            AssistanceErrorCode.TOO_LARGE, "Réponse IA trop volumineuse."
+                        )
                     if time.monotonic() > deadline:
-                        raise DomainError("Délai IA dépassé ; données locales conservées.")
+                        raise AssistanceFailure(
+                            AssistanceErrorCode.TIMEOUT,
+                            "Délai IA dépassé ; données locales conservées.",
+                        )
                     if not chunk:
                         break
             data = json.loads(content)
+            if secret and secret in json.dumps(data, ensure_ascii=False):
+                raise ValueError
             if gemini:
+                if data.get("promptFeedback", {}).get("blockReason"):
+                    raise AssistanceFailure(
+                        AssistanceErrorCode.BLOCKED, "Demande bloquée par le fournisseur."
+                    )
                 candidate = data["candidates"][0]
+                if candidate.get("finishReason") in {
+                    "SAFETY",
+                    "RECITATION",
+                    "BLOCKLIST",
+                    "PROHIBITED_CONTENT",
+                    "SPII",
+                }:
+                    raise AssistanceFailure(
+                        AssistanceErrorCode.BLOCKED, "Réponse bloquée par le fournisseur."
+                    )
+                if candidate.get("finishReason") == "MAX_TOKENS":
+                    raise AssistanceFailure(
+                        AssistanceErrorCode.INCOMPLETE,
+                        "Réponse IA interrompue par la limite de sortie.",
+                    )
                 if candidate["finishReason"] != "STOP":
                     raise ValueError
                 raw = "".join(
                     p["text"] for p in candidate["content"]["parts"] if not p.get("thought")
                 )
             elif local:
+                if data.get("done_reason") == "length":
+                    raise AssistanceFailure(
+                        AssistanceErrorCode.INCOMPLETE,
+                        "Réponse IA interrompue par la limite de sortie.",
+                    )
                 if data.get("done") is not True or data.get("done_reason") != "stop":
                     raise ValueError
                 raw = data["message"]["content"]
             else:
                 choice = data["choices"][0]
+                if choice.get("finish_reason") == "content_filter" or choice["message"].get(
+                    "refusal"
+                ):
+                    raise AssistanceFailure(
+                        AssistanceErrorCode.BLOCKED, "Réponse bloquée par le fournisseur."
+                    )
+                if choice.get("finish_reason") == "length":
+                    raise AssistanceFailure(
+                        AssistanceErrorCode.INCOMPLETE,
+                        "Réponse IA interrompue par la limite de sortie.",
+                    )
                 if choice["finish_reason"] != "stop" or choice["message"].get("refusal"):
                     raise ValueError
                 raw = choice["message"]["content"]
-            if secret and secret in json.dumps(data, ensure_ascii=False):
-                raise ValueError
             values = parse_suggestions(raw)
             if not values:
-                raise DomainError("Aucune suggestion exploitable ; données locales conservées.")
+                raise AssistanceFailure(
+                    AssistanceErrorCode.NO_SUGGESTIONS,
+                    "Aucune suggestion exploitable ; données locales conservées.",
+                )
             stamp = datetime.now(UTC).isoformat()
             reference = (
                 f"ai:{config.backend.value};endpoint={config.destination};model={config.model};"
@@ -229,15 +283,44 @@ class ChatAssistance:
                 ),
                 values,
             )
+        except AssistanceFailure:
+            raise
         except HTTPError as error:
-            raise DomainError(
-                f"Fournisseur IA refusé (HTTP {error.code}) ; aucun retry automatique."
+            code = {
+                400: AssistanceErrorCode.BAD_REQUEST,
+                401: AssistanceErrorCode.AUTHENTICATION,
+                403: AssistanceErrorCode.PERMISSION,
+                404: AssistanceErrorCode.MODEL_OR_ENDPOINT,
+                429: AssistanceErrorCode.RATE_LIMIT,
+            }.get(
+                error.code,
+                AssistanceErrorCode.PROVIDER_UNAVAILABLE
+                if 500 <= error.code <= 599
+                else AssistanceErrorCode.HTTP_ERROR,
+            )
+            error.close()
+            raise AssistanceFailure(
+                code,
+                f"Fournisseur IA refusé (HTTP {error.code}) ; aucun retry automatique.",
+                error.code,
             ) from None
-        except (URLError, OSError, TimeoutError):
-            raise DomainError("Fournisseur IA inaccessible (réseau, TLS ou délai).") from None
+        except TimeoutError:
+            raise AssistanceFailure(
+                AssistanceErrorCode.TIMEOUT, "Délai IA dépassé ; données locales conservées."
+            ) from None
+        except (URLError, OSError) as error:
+            code = (
+                AssistanceErrorCode.TIMEOUT
+                if isinstance(getattr(error, "reason", None), TimeoutError)
+                else AssistanceErrorCode.NETWORK
+            )
+            raise AssistanceFailure(
+                code, "Fournisseur IA inaccessible (réseau, TLS ou délai)."
+            ) from None
         except (ValueError, KeyError, TypeError, IndexError, AttributeError):
-            raise DomainError(
-                "Réponse IA invalide ou incomplète ; aucun changement enregistré."
+            raise AssistanceFailure(
+                AssistanceErrorCode.INVALID_RESPONSE,
+                "Réponse IA invalide ou incomplète ; aucun changement enregistré.",
             ) from None
 
 
