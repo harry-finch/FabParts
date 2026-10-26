@@ -115,15 +115,38 @@ initial ont été arrêtés ; aucun host, sidecar ou worker lancé pour ce test 
 actif. Les **9 fichiers historiques sont inchangés** ; le dossier système FabParts
 reste absent comme au début du jalon.
 
-**Inspection native en attente — Mac verrouillé.** Computer Use a retourné :
-« The Mac is locked and automatic unlock could not unlock it. Ask the user to
-unlock the Mac manually before continuing. » Une demande de déverrouillage est
-adressée à l'utilisateur. Aucune capture TECH-04B ni validation visuelle n'est
-revendiquée à ce stade. Le paquet a été démarré uniquement sur un workspace jetable
-contenant cinq cas synthétiques (quatre ressources, incomplet, symbole seul,
-PCB cohérent et pins/pads incompatibles). Il reste à inspecter les actions réelles,
-l'acceptation WARNING, les quatre previews, les thèmes clair/sombre et la fenêtre
-normale/étroite, puis à conserver des captures et finaliser le checkpoint.
+## Inspection native macOS — Computer Use
+
+Qualification du paquet release et du sidecar embarqué sur cinq cas jetables,
+après déverrouillage de la session par l'utilisateur. Aucune donnée historique
+ouverte writable. Fenêtre normale 1440×900 points, fenêtre agrandie, puis fenêtre
+réduite par le menu natif macOS à environ 901×949 points ; thèmes clair/sombre et
+libellés FR/EN inspectés. Actions, textes longs, repliements, focus et confirmation
+non précochée restent utilisables ; aucun débordement observé.
+
+| Cas inspecté | Résultat observé |
+| --- | --- |
+| Quatre ressources sélectionnées | Aucun statut prêt sans rapport ; WARNING puis Prêt pour schéma |
+| Revue des trois WARNING | Bouton désactivé avant confirmation ; acceptation explicite → Prêt pour PCB ; état métier Brouillon conservé |
+| Symbole seul | Prêt pour schéma, erreurs PCB pour package/footprint manquants |
+| Symbole et footprint cohérents | PASS et Prêt pour PCB sans 3D ni datasheet |
+| Pin 9 absente du footprint | Erreur visible ; accepter le WARNING de pads supplémentaires ne permet pas Prêt pour PCB |
+| Composant sans ressources | À compléter, trois erreurs explicites |
+| Métadonnée changée via l'assistant TECH-03 | Rapport STALE et À compléter ; contrôle d'actualité conserve STALE ; nouvelle validation requise pour retrouver Prêt pour PCB |
+| Bibliothèque contenant les cinq cas | Membres bloquants identifiés, rapports indépendants ; modification d'un membre rend le rapport Collection STALE |
+| Fermeture puis réouverture personnelle | Rapport, date et acceptation conservés ; arrêt coopératif du sidecar, exit 0 |
+| Copie readonly native | Lecture et quatre previews disponibles ; aucune commande Valider/Accepter ; hashes des 10 fichiers identiques après fermeture |
+
+Les cartes de ressources distinguent maintenant association/aperçu et qualification
+du composant, sans modifier l'état global des assets. Les textes d'aide évitent les
+identifiants de milestone et le vocabulaire « workspace writable ».
+
+Captures natives finales :
+
+- [Rapport et WARNING acceptés, sombre](tech04b/warning-accepted-dark.jpg)
+- [Quatre aperçus après validation](tech04b/four-previews-dark.jpg)
+- [Bibliothèque en clair, fenêtre réduite](tech04b/collection-light-narrow.jpg)
+
 
 ## Limites
 
@@ -136,6 +159,10 @@ TECH-05 hors périmètre. TECH-04B ne sera pas fusionné automatiquement.
 
 ## État de livraison
 
-Checkpoint non clôturé : l’inspection native attend le déverrouillage du Mac.
-La PR sera en brouillon jusqu’à cette vérification ; aucune approbation finale ni
-qualification GO du jalon n’est revendiquée à ce stade.
+**GO WITH CONDITIONS** : critères fonctionnels, contrats et inspection native
+vérifiés. Réserves : macOS ARM64 seulement, couverture M5 partielle, diagnostics
+historiques détaillés parfois en français et coût des grandes collections.
+Aucune certification électrique/mécanique exhaustive ni qualification d'une autre
+plateforme n'est revendiquée. Les réserves de récupération TECH-04A restent applicables.
+
+PR #5 vers `main`, prête pour revue, sans merge automatique. Arrêt à TECH-04B.

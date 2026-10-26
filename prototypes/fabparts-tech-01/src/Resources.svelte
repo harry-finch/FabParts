@@ -2,6 +2,7 @@
 <script lang="ts">
 import { Box, Cpu, CircuitBoard, FileText, CircleDashed } from '@lucide/svelte';
 import AssetPreview from './AssetPreview.svelte';
+import {vt} from './validation_text';
 import type { Detail } from './controller';
 import { text as t, roles, roleLabel } from './text';
 let { detail }: { detail: Detail } = $props();
@@ -14,7 +15,7 @@ const icons = { SYMBOL:Cpu, FOOTPRINT:CircuitBoard, MODEL_3D:Box, DATASHEET:File
   {@const present = assets.length + external.length > 0}
   {@const Icon = icons[role as keyof typeof icons]}
   <section class="resource">
-    <header><span><Icon size={14}/>{roleLabel(role)}</span><span class="resource-state"><CircleDashed size={12}/>{t(present ? 'qualificationShort' : 'missing')}</span></header>
+    <header><span><Icon size={14}/>{roleLabel(role)}</span><span class="resource-state" title={vt('resourceScope')}><CircleDashed size={12}/>{t(present ? 'associated' : 'missing')}</span></header>
     {#key detail.id}<AssetPreview {detail} {role}/>{/key}
   </section>
 {/each}
