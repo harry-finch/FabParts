@@ -4,8 +4,9 @@ import Section from '../../fabparts-ux/src/components/Section.svelte';
 import Disclosure from '../../fabparts-ux/src/components/Disclosure.svelte';
 import type { Detail } from './controller';
 import Resources from './Resources.svelte';
+import ValidationPanel from './ValidationPanel.svelte';
 import { text as t, stateLabel, roles, roleLabel } from './text';
-let { detail, full = false }: { detail: Detail; full?: boolean } = $props();
+let { detail, full = false, writable=false, onbusy=()=>{} }: { detail: Detail; full?: boolean; writable?:boolean;onbusy?:(busy:boolean)=>void } = $props();
 const icons = { SYMBOL:Cpu, FOOTPRINT:CircuitBoard, MODEL_3D:Box, DATASHEET:FileText };
 </script>
 {#snippet properties()}
@@ -16,7 +17,8 @@ const icons = { SYMBOL:Cpu, FOOTPRINT:CircuitBoard, MODEL_3D:Box, DATASHEET:File
 </Section>
 {/snippet}
 {#if full}
-<div class="identity-heading"><div><span class="eyebrow">{detail.category || t('unknown')}</span><h1>{detail.reference}</h1><p>{detail.manufacturer || t('unknown')} · {detail.description || t('unknown')}</p></div><div class="identity-state"><span>{stateLabel(detail.state)}</span><span class="secondary small">{t('qualification')}</span></div></div>
+<div class="identity-heading"><div><span class="eyebrow">{detail.category || t('unknown')}</span><h1>{detail.reference}</h1><p>{detail.manufacturer || t('unknown')} · {detail.description || t('unknown')}</p></div><div class="identity-state"><span>{stateLabel(detail.state)}</span></div></div>
+<ValidationPanel id={detail.id} {writable} {onbusy}/>
 <div class="detail-columns"><div class="detail-resources"><h2 class="section-heading">{t('resources')}</h2><Resources {detail}/></div><aside class="properties">
 {@render properties()}
 <Section id="tech-membership" title={t('libraries')}><div class="members">{#each detail.libraries as library}<span><Folder size={12}/>{library.name}</span>{:else}<span class="secondary">{t('unknown')}</span>{/each}</div></Section>
@@ -29,8 +31,9 @@ const icons = { SYMBOL:Cpu, FOOTPRINT:CircuitBoard, MODEL_3D:Box, DATASHEET:File
   <div class="members">{#each detail.libraries as library}<span><Folder size={12}/>{library.name}</span>{/each}</div>
 </div>
 <Section id="tech-state" title={t('state')}>
-  <span>{stateLabel(detail.state)}</span><p class="secondary small">{t('qualification')}</p>
+  <span>{stateLabel(detail.state)}</span>
 </Section>
+<ValidationPanel id={detail.id} {writable} {onbusy} compact/>
 {@render properties()}
 <Section id="tech-resources" title={t('resources')}>
   {#each roles as role}

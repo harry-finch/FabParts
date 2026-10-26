@@ -13,6 +13,7 @@ from kipartmanager import __version__
 from kipartmanager.application.asset_previews import AssetPreviews
 from kipartmanager.application.catalogue_reader import CatalogueReader
 from kipartmanager.application.ingestion import Ingestion
+from kipartmanager.application.validation_review import ReportChanged, ValidationReview
 from kipartmanager.domain.entities import DomainError, PartState
 from kipartmanager.infrastructure.readonly_catalogue import SCHEMA
 from kipartmanager.infrastructure.user_workspace import UserWorkspace
@@ -20,6 +21,10 @@ from kipartmanager.ingestion_ipc import FIELDS as INGESTION_METHODS
 from kipartmanager.ingestion_ipc import dispatch
 from kipartmanager.ingestion_ipc import validate as validate_ingestion
 from kipartmanager.ports.previews import PDF_LIMIT
+from kipartmanager.validation_ipc import METHODS as VALIDATION_METHODS
+from kipartmanager.validation_ipc import WRITES as VALIDATION_WRITES
+from kipartmanager.validation_ipc import dispatch as dispatch_validation
+from kipartmanager.validation_ipc import validate as validate_validation
 
 PROTOCOL_VERSION = 1
 MAX_REQUEST = 16 * 1024
@@ -114,6 +119,7 @@ def respond(
     ingestion: Ingestion | None = None,
     schema: str = SCHEMA,
     workspace: UserWorkspace | None = None,
+    review: ValidationReview | None = None,
 ) -> dict[str, Any]:
     identity = None
     try:
@@ -136,6 +142,21 @@ def respond(
         method = request["method"]
         if not isinstance(method, str):
             raise ProtocolError("INVALID_REQUEST", "Nom de commande requis.")
+        if method in VALIDATION_METHODS:
+            if review is None:
+                raise ProtocolError("READ_FAILED", "Validation unavailable")
+            if method in VALIDATION_WRITES and (
+                ingestion is None or bool(workspace and workspace.requires_restart)
+            ):
+                raise ProtocolError("READ_ONLY", "Validation writes unavailable")
+            if ingestion is not None and ingestion.preparation is not None:
+                raise ProtocolError("BUSY", "Finish the active preparation first")
+            try:
+                params = validate_validation(method, request["params"])
+            except (ValueError, TypeError) as error:
+                raise ProtocolError("INVALID_PARAMS", str(error)) from error
+            result: object = dispatch_validation(review, method, params)
+            return {"protocol_version": 1, "request_id": identity, "ok": True, "result": result}
         if method.startswith("workspace_"):
             if workspace is None:
                 raise ProtocolError("READ_ONLY", "Personal workspace required")
@@ -164,7 +185,7 @@ def respond(
                 "workspace_verify": lambda: workspace.verify(Path(params["path"])),
                 "workspace_restore": lambda: workspace.restore(params["handle"]),
             }
-            result: object = operations[method]()
+            result = operations[method]()
             return {"protocol_version": 1, "request_id": identity, "ok": True, "result": result}
         if method in INGESTION_METHODS:
             if workspace is not None and workspace.requires_restart:
@@ -222,6 +243,8 @@ def respond(
         return {"protocol_version": 1, "request_id": identity, "ok": True, "result": result}
     except ProtocolError as error:
         return error_response(identity, error.code, str(error))
+    except ReportChanged as error:
+        return error_response(identity, "REPORT_CHANGED", str(error))
     except DomainError as error:
         return error_response(identity, "DOMAIN_ERROR", str(error))
     except Exception as error:
@@ -239,6 +262,7 @@ def serve(
     ingestion: Ingestion | None = None,
     schema: str = SCHEMA,
     workspace: UserWorkspace | None = None,
+    review: ValidationReview | None = None,
 ) -> None:
     while raw := source.readline(MAX_REQUEST + 1):
         if len(raw) > MAX_REQUEST:
@@ -249,7 +273,7 @@ def serve(
         if not raw.endswith(b"\n"):
             response = error_response(None, "INVALID_REQUEST", "Message JSONL incomplet.")
         else:
-            response = respond(raw, reader, previews, ingestion, schema, workspace)
+            response = respond(raw, reader, previews, ingestion, schema, workspace, review)
         encoded = json.dumps(response, ensure_ascii=False, allow_nan=False).encode()
         if len(encoded) > MAX_RESPONSE:
             encoded = json.dumps(

@@ -322,3 +322,18 @@ macOS ; le bouton Restaurer n'apparaît qu'après vérification. La confirmation
 native indique la conservation des données précédentes. Pendant l'opération les
 actions sont désactivées ; aucun succès n'est anticipé. Après restauration, les
 écritures restent bloquées et un bouton explicite redémarre le moteur.
+
+## TECH-04B — Validation et préparation
+
+La fiche présente la validation technique séparément de l'état métier. Afficher
+À compléter / Prêt pour schéma / Prêt pour PCB uniquement depuis les preuves
+actuelles projetées par le backend ; un aperçu ou une association ne vaut jamais
+validation. Un rapport STALE ou une erreur de lecture retire toute affirmation
+« prêt ». Les anciens constats sont explicitement présentés comme historiques.
+
+Les erreurs bloquantes sont lisibles ; les réussites sont repliées. Les WARNING
+s'examinent avant une case de confirmation propre au rapport, jamais précochée.
+Une réponse neuve ou un changement de contexte réinitialise la confirmation.
+La qualification de bibliothèque reste un rapport simple avec accès aux membres,
+sans commande de publication. Voir les limites précises dans
+[FABPARTS_2_TECH_04B.md](FABPARTS_2_TECH_04B.md).

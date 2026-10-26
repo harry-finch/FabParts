@@ -10,6 +10,8 @@ import { i18n, LOCALES } from '../../fabparts-ux/src/lib/i18n.svelte';
 import { Controller, initial, defaultQuery, type Snapshot } from './controller';
 import { text as t, stateLabel } from './text';
 import WorkspaceSettings from './WorkspaceSettings.svelte';
+import ValidationPanel from './ValidationPanel.svelte';
+import {vt} from './validation_text';
 import {workspaceText as wt} from './workspace_text';
 import {Settings} from '@lucide/svelte';
 import Details from './Details.svelte';
@@ -20,6 +22,7 @@ const controller = new Controller(invoke, next => view = next);
 let query = $state(defaultQuery());
 let inspector = $state(true), full = $state(false), panelWidth = $state(320);
 let copyPath = $state('');
+let collectionView=$state(false), validationBusy=$state(false);
 let settings=$state(false), workspaceBusy=$state(false), workspaceBlocked=$state(false);
 let adding=$state(false), resumeId=$state(''), notice=$state('');
 const tr=(fr:string,en:string)=>i18n.locale==='fr'?fr:en;
@@ -27,7 +30,7 @@ const personal=$derived(view.health?.workspace_mode==='personal');
 const writable=$derived(view.health?.read_only===false&&!workspaceBlocked);
 let searchInput = $state<HTMLInputElement>();
 $effect(() => { const q = {...query}; const timer = setTimeout(() => void controller.load(q), 180); return () => clearTimeout(timer); });
-onMount(() => { void start(); const timer = setInterval(() => {if(!adding&&!workspaceBusy)void controller.heartbeat();}, 3000); return () => { clearInterval(timer); controller.dispose(); }; });
+onMount(() => { void start(); const timer = setInterval(() => {if(!adding&&!workspaceBusy&&!validationBusy)void controller.heartbeat();}, 3000); return () => { clearInterval(timer); controller.dispose(); }; });
 async function start(){
   await controller.start();
   const operation=browserRecovery.get();
@@ -56,19 +59,19 @@ function resize(event: PointerEvent) {
 </script>
 <svelte:window onkeydown={keydown}/>
 <div class="app-shell">
-  <header class="appbar"><div class="brand"><img src="/logo.svg" alt=""/><strong>FabParts</strong></div><span class="tagline">{t('libraries')}</span><span class="demo-label">{personal?'TECH-04A':writable?'TECH-03':'TECH-01'} <span>{personal?wt('personal'):writable?tr('Sandbox local','Local sandbox'):t('copy')}</span></span>
-    <div class="bar-right">{#if personal}<button class="btn quiet icon" disabled={adding||workspaceBusy} aria-label={wt('settings')} title={wt('settings')} onclick={()=>settings=!settings}><Settings size={15}/></button>{/if}<div class="mini-segments">{#each LOCALES as locale}<button class:on={i18n.locale === locale.id} onclick={() => i18n.set(locale.id)}>{locale.id.toUpperCase()}</button>{/each}</div>
+  <header class="appbar"><div class="brand"><img src="/logo.svg" alt=""/><strong>FabParts</strong></div><span class="tagline">{t('libraries')}</span><span class="demo-label">{'TECH-04B'} <span>{personal?wt('personal'):writable?tr('Sandbox local','Local sandbox'):t('copy')}</span></span>
+    <div class="bar-right">{#if personal}<button class="btn quiet icon" disabled={adding||workspaceBusy||validationBusy} aria-label={wt('settings')} title={wt('settings')} onclick={()=>settings=!settings}><Settings size={15}/></button>{/if}<div class="mini-segments">{#each LOCALES as locale}<button class:on={i18n.locale === locale.id} onclick={() => i18n.set(locale.id)}>{locale.id.toUpperCase()}</button>{/each}</div>
     <div class="mini-segments">{#each THEMES as choice}<button class:on={theme.choice === choice} onclick={() => theme.set(choice)} aria-label={choice} title={choice}>{#if choice === 'dark'}<Moon size={14}/>{:else if choice === 'light'}<Sun size={14}/>{:else}<Monitor size={14}/>{/if}</button>{/each}</div></div>
   </header>
   <div class="workspace">
     <aside class="sidebar"><div class="sidebar-top"><Library size={17}/><strong>{t('libraries')}</strong></div>
       <Section id="tech-libraries" title={t('libraries')}>
-        <button disabled={adding} class="nav-row" class:active={query.library === 'all'} onclick={() => { query = {...query,library:'all',offset:0}; full=false; }}><Layers size={14}/><span>{t('all')}</span></button>
-        {#each view.libraries as library}<button disabled={adding} class="nav-row" class:active={query.library === library.id} onclick={() => { query = {...query,library:library.id,offset:0}; full=false; }}><Folder size={14}/><span>{library.name}</span><small>{library.count}</small></button>{/each}
+        <button disabled={adding||validationBusy} class="nav-row" class:active={query.library === 'all'} onclick={() => { query = {...query,library:'all',offset:0}; full=false;collectionView=false; }}><Layers size={14}/><span>{t('all')}</span></button>
+        {#each view.libraries as library}<button disabled={adding||validationBusy} class="nav-row" class:active={query.library === library.id} onclick={() => { query = {...query,library:library.id,offset:0}; full=false;collectionView=false; }}><Folder size={14}/><span>{library.name}</span><small>{library.count}</small></button>{/each}
       </Section>
       <Section id="tech-categories" title={t('categories')}>
-        <button disabled={adding} class="nav-row" class:active={!query.category} onclick={() => { query.category='';query.offset=0;full=false; }}><Layers size={14}/><span>{t('allCategories')}</span></button>
-        {#each view.page.facets.categories as category}<button disabled={adding} class="nav-row" class:active={query.category === category} onclick={() => { query.category=category;query.offset=0;full=false; }}><Cpu size={14}/><span>{category}</span></button>{/each}
+        <button disabled={adding||validationBusy} class="nav-row" class:active={!query.category} onclick={() => { query.category='';query.offset=0;full=false;collectionView=false; }}><Layers size={14}/><span>{t('allCategories')}</span></button>
+        {#each view.page.facets.categories as category}<button disabled={adding||validationBusy} class="nav-row" class:active={query.category === category} onclick={() => { query.category=category;query.offset=0;full=false;collectionView=false; }}><Cpu size={14}/><span>{category}</span></button>{/each}
       </Section>
       <div class="sidebar-bottom"><LockKeyhole size={14}/><div><p>{personal?wt('personal'):writable?tr('Sandbox de test · écritures locales','Test sandbox · local writes'):t('readonly')}</p>{#if view.health}<Disclosure id="tech-engine" label={t('technical')}><p class="engine-metadata">PID {view.health.pid}<br/>Python {view.health.engine_version}<br/>Qt {String(view.health.qt_loaded)}<br/>{view.health.schema}</p></Disclosure>{/if}</div></div>
     </aside>
@@ -78,13 +81,16 @@ function resize(event: PointerEvent) {
         <WorkspaceSettings onback={()=>settings=false} onbusy={value=>workspaceBusy=value} onblocked={value=>workspaceBlocked=value} onrestart={async()=>{settings=false;workspaceBlocked=false;await start();}}/>
       {:else if adding}
         <IngestionFlow {personal} partId={resumeId} library={query.library} oncancel={()=>{adding=false;notice=tr('Ajout annulé.','Addition cancelled.');}} onsave={saved} onexisting={existing}/>
+      {:else if collectionView&&query.library!=='all'&&view.phase==='ready'}
+        <section class="collection-review"><button class="btn quiet" disabled={validationBusy} onclick={()=>collectionView=false}><ArrowLeft size={14}/>{vt('back')}</button><h1>{view.libraries.find(l=>l.id===query.library)?.name}</h1>
+        <ValidationPanel kind="Collection" id={query.library} {writable} onbusy={busy=>validationBusy=busy} onpart={async id=>{collectionView=false;await controller.select(id);full=true;}}/></section>
       {:else if full && view.phase === 'ready'}
-        <section class="detail-page"><div class="detail-toolbar"><button class="btn quiet" onclick={() => full=false}><ArrowLeft size={15}/>{t('back')}</button><span class="crumb">/</span><span>{view.detail?.reference || t('loading')}</span><span class="grow"></span>{#if writable&&view.detail?.state==='DRAFT'}<button class="btn" onclick={()=>add(view.detail!.id)}>{tr('Compléter le brouillon','Complete draft')}</button>{/if}</div>
-          <div class="detail-content">{#if view.detail}<Details detail={view.detail} full/>{:else}<div class="empty-state">{t('loading')}</div>{/if}</div>
+        <section class="detail-page"><div class="detail-toolbar"><button class="btn quiet" onclick={() => full=false}><ArrowLeft size={15}/>{t('back')}</button><span class="crumb">/</span><span>{view.detail?.reference || t('loading')}</span><span class="grow"></span>{#if writable&&view.detail?.state==='DRAFT'}<button disabled={validationBusy} class="btn" onclick={()=>add(view.detail!.id)}>{tr('Compléter le brouillon','Complete draft')}</button>{/if}</div>
+          <div class="detail-content">{#if view.detail}<Details detail={view.detail} {writable} onbusy={busy=>validationBusy=busy} full/>{:else}<div class="empty-state">{t('loading')}</div>{/if}</div>
         </section>
       {:else}
       <section class="library-page">
-        <div class="library-toolbar"><h1>{query.library === 'all' ? t('all') : view.libraries.find(l => l.id === query.library)?.name || t('libraries')}</h1><span class="grow"></span><button class="btn" disabled={!writable||view.phase!=='ready'||!!browserRecovery.get()} title={writable?'':t('noWrite')} onclick={()=>add()}><Plus size={14}/>{t('add')}</button></div>
+        <div class="library-toolbar"><h1>{query.library === 'all' ? t('all') : view.libraries.find(l => l.id === query.library)?.name || t('libraries')}</h1><span class="grow"></span>{#if query.library!=='all'}<button class="btn" disabled={validationBusy||view.phase!=='ready'} onclick={()=>collectionView=true}>{vt('collection')}</button>{/if}<button class="btn" disabled={validationBusy||!writable||view.phase!=='ready'||!!browserRecovery.get()} title={writable?'':t('noWrite')} onclick={()=>add()}><Plus size={14}/>{t('add')}</button></div>
         <div class="filterbar"><div class="search"><Search size={15}/><input bind:this={searchInput} bind:value={query.search} oninput={() => query.offset=0} aria-label={t('search')} placeholder={t('search')}/>{#if query.search}<button class="btn quiet icon" aria-label={t('clear')} onclick={() => {query.search='';query.offset=0;}}><X size={13}/></button>{:else}<kbd>⌘ K</kbd>{/if}</div>
           <select class="input" bind:value={query.state} onchange={() => query.offset=0} aria-label={t('state')}><option value="">{t('allStates')}</option>{#each ['DRAFT','IDENTIFIED','DEPRECATED'] as s}<option value={s}>{stateLabel(s)}</option>{/each}</select>
           <select class="input package-filter" bind:value={query.package} onchange={() => query.offset=0} aria-label={t('package')}><option value="">{t('allPackages')}</option>{#each view.page.facets.packages as p}<option value={p}>{p}</option>{/each}</select>
@@ -102,16 +108,17 @@ function resize(event: PointerEvent) {
             <div class="list-bottom"><span>{view.page.offset + (view.page.components.length ? 1 : 0)}–{view.page.offset + view.page.components.length} / {view.page.total}</span><div class="pagination"><button class="btn quiet" disabled={query.offset === 0 || view.loading} onclick={() => query.offset=Math.max(0,query.offset-query.limit)}>{t('previous')}</button><button class="btn quiet" disabled={query.offset+query.limit >= view.page.total || view.loading} onclick={() => query.offset+=query.limit}>{t('next')}</button></div>{#if view.detail}<button class="btn quiet" onclick={() => full=true}>{t('details')}<ChevronRight size={13}/></button>{/if}</div>
           </div>
           {#if inspector}<aside class="inspector"><button class="resize-handle" onpointerdown={resize} onkeydown={e => { if (e.key === 'ArrowLeft') panelWidth=Math.min(440,panelWidth+20); if (e.key === 'ArrowRight') panelWidth=Math.max(280,panelWidth-20); }} aria-label={t('resize')} title={t('resize')}></button>
-            {#if view.detail}<Details detail={view.detail}/><div class="inspector-footer"><button class="btn" onclick={() => full=true}>{t('details')}<ChevronRight size={14}/></button></div>{:else}<div class="empty-state"><Cpu size={24}/><p>{t(view.detailLoading ? 'loading' : 'select')}</p></div>{/if}
+            {#if view.detail}<Details detail={view.detail} {writable} onbusy={busy=>validationBusy=busy}/><div class="inspector-footer"><button class="btn" onclick={() => full=true}>{t('details')}<ChevronRight size={14}/></button></div>{:else}<div class="empty-state"><Cpu size={24}/><p>{t(view.detailLoading ? 'loading' : 'select')}</p></div>{/if}
           </aside>{/if}
         </div>
       </section>{/if}
     </main>
   </div>
-  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{personal?wt('personal'):writable?tr('Sandbox · données de test','Sandbox · test data'):t('copy')}</span>{#snippet right()}<span>{personal?'TECH-04A':writable?'TECH-03':'TECH-02B'} · IPC v1</span>{/snippet}</StatusBar>
+  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{personal?wt('personal'):writable?tr('Sandbox · données de test','Sandbox · test data'):t('copy')}</span>{#snippet right()}<span>{'TECH-04B'} · IPC v1</span>{/snippet}</StatusBar>
 </div>
 
 <style>
+.collection-review{overflow:auto;padding:var(--s4);min-width:0}
 .save-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 16px;border-bottom:1px solid var(--border);color:var(--success-text);font-size:var(--fs-sm);background:var(--bg-panel)}
 main:has(.save-notice){display:flex;flex-direction:column}main:has(.save-notice)>:global(section){min-height:0;flex:1}
 

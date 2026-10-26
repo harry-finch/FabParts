@@ -112,3 +112,18 @@ qualification suivante. Les fichiers peuvent aussi changer après le contrôle ;
 ne garantit pas une publication immuable. M6 devra revérifier ses entrées au point
 d'utilisation, puis M7 traitera les instantanés. Les règles futures doivent changer
 la version de règles afin de ne pas réutiliser abusivement des rapports M5.
+
+## Projection TECH-04B dans Tauri/Svelte
+
+`ValidationReview` réutilise LocalValidation et les constats RESOURCE actuels.
+L'éligibilité M5 définit Prêt pour PCB. Un symbole sélectionné dont l'intégrité et
+la structure sont contrôlées peut être Prêt pour schéma malgré les erreurs PCB
+sur le package, le footprint ou le mapping ; ses WARNING propres doivent avoir
+été acceptés. Un rapport absent/STALE ne démontre aucune préparation. Ces statuts
+ne modifient ni Part.state ni Asset.validation_state.
+
+Une capacité de session lie l'acceptation au rapport WARNING exactement affiché.
+Un rapport remplacé, une modification d'entrée ou un redémarrage invalide cette
+confirmation. La politique M5 reste inchangée ; une validation neuve remet
+l'acceptation à zéro. Les détails d'IPC, les bornes et la qualification native
+figurent dans [TECH-04B](FABPARTS_2_TECH_04B.md).

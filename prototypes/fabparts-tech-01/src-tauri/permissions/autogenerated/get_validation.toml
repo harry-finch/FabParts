@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-validation"
+description = "Enables the get_validation command without any pre-configured scope."
+commands.allow = ["get_validation"]
+
+[[permission]]
+identifier = "deny-get-validation"
+description = "Denies the get_validation command without any pre-configured scope."
+commands.deny = ["get_validation"]
