@@ -122,6 +122,13 @@ pub struct Search {
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct Discover {
+    preparation: String,
+    fields: Fields,
+    role: String,
+}
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Preview {
     preparation: String,
     token: String,
@@ -154,6 +161,8 @@ pub struct Commit {
     operation_id: String,
     fields: Fields,
     selections: BTreeMap<String, String>,
+    #[serde(default)]
+    metadata: BTreeMap<String, String>,
     #[serde(default = "save_action")]
     action: Action,
     #[serde(default)]
@@ -168,6 +177,8 @@ pub enum Request {
     Inspect(Inspect),
     #[serde(rename = "ingestion_search")]
     Search(Search),
+    #[serde(rename = "ingestion_discover")]
+    Discover(Discover),
     #[serde(rename = "ingestion_preview")]
     Preview(Preview),
     #[serde(rename = "ingestion_commit")]
@@ -200,6 +211,11 @@ impl Request {
                 previews::handle(&v.preparation)?;
                 v.fields.validate()
             }
+            Self::Discover(v) => {
+                previews::handle(&v.preparation)?;
+                v.fields.validate()?;
+                role(&v.role)
+            }
             Self::Search(v) => {
                 previews::handle(&v.preparation)?;
                 role(&v.role)?;
@@ -214,6 +230,15 @@ impl Request {
                 identifier(&v.operation_id, false)?;
                 identifier(&v.existing_id, true)?;
                 v.fields.validate()?;
+                if v.metadata.len() > 3 {
+                    return Err(invalid());
+                }
+                for (key, token) in &v.metadata {
+                    if !["mpn", "manufacturer", "category"].contains(&key.as_str()) {
+                        return Err(invalid());
+                    }
+                    previews::handle(token)?;
+                }
                 if v.selections.len() > 4 {
                     return Err(invalid());
                 }
@@ -483,6 +508,17 @@ mod tests {
                     .unwrap();
             assert!(request.validate().is_err());
         }
+    }
+    #[test]
+    fn discovery_is_typed_preparation_scoped_and_readonly_guarded() {
+        let params =
+            json!({"preparation":"a".repeat(48),"role":"SYMBOL","fields":{"reference":"NE555D"}});
+        let request: Request =
+            serde_json::from_value(json!({"method":"ingestion_discover","params":params})).unwrap();
+        assert!(request.validate().is_ok());
+        assert!(authorize(false, Some(&"a".repeat(48)), "ingestion_discover", &params).is_err());
+        assert!(authorize(true, Some(&"b".repeat(48)), "ingestion_discover", &params).is_err());
+        assert!(serde_json::from_value::<Request>(json!({"method":"ingestion_discover","params":{"preparation":"a".repeat(48),"role":"SYMBOL","fields":{},"path":"/outside"}})).is_err());
     }
     #[test]
     fn native_capability_checks_source_stability_and_symlinks() {

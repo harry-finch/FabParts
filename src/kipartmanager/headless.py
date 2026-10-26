@@ -119,6 +119,7 @@ def main() -> int:
                 LocalPreparedFiles(data_dir, ReadonlyPreviews(data_dir)),
                 previews,
                 libraries,
+                LocalResourceProbe(store, LocalKiCadIndex(data_dir)),
             )
         with engine.connect() as connection:
             schema = str(connection.scalar(text("SELECT version_num FROM alembic_version")))

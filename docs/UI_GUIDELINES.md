@@ -378,3 +378,20 @@ proportionnelle de 8 % et une réserve pour les traits. Ne pas imposer de taille
 physique minimale aux petits symboles. Recalculer pour l'unité/variante et les
 couches affichées ; conserver proportions, zoom manuel, recentrage et agrandissement.
 Les bornes conservatrices du moteur restent le repli, sans changement du parseur.
+
+### Recherche guidée — TECH-06A
+
+Conserver les trois étapes de l'ajout. « Rechercher des ressources » à l'étape
+Identification alimente progressivement la grille des quatre ressources. Afficher
+nom, provenance, raison et nature du rapprochement ; un nom exact n'est pas une
+certification de compatibilité. Examiner une proposition ne la retient pas :
+« Retenir cette ressource » est une action distincte. Montrer le choix conservé
+lorsqu'un autre candidat est examiné. Un package existant conserve ses ressources
+partagées, après choix explicite du package et de cette portée.
+
+Les métadonnées et packages connus sont proposés dans une divulgation contextuelle,
+avec acceptation par champ, jamais remplis en silence. Les valeurs saisies restent
+prioritaires ; modifier l'identité retire les anciennes suggestions non retenues.
+Sans index/résultat, conserver l'import manuel et le brouillon. Reprendre la hauteur
+SVG partagée de 144 px ; ne pas relancer une conversion pour une modification de
+métadonnée sans changement de ressource. FR/EN, clair/sombre et largeur réduite.

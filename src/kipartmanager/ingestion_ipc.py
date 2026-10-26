@@ -13,6 +13,7 @@ from kipartmanager.domain.entities import AssetType
 
 FIELDS: dict[str, set[str]] = {
     "ingestion_begin": {"part_id"},
+    "ingestion_discover": {"preparation", "fields", "role"},
     "ingestion_inspect": {"preparation", "fields"},
     "ingestion_search": {"preparation", "role", "query"},
     "ingestion_preview": {"preparation", "token"},
@@ -23,6 +24,7 @@ FIELDS: dict[str, set[str]] = {
         "selections",
         "action",
         "existing_id",
+        "metadata",
     },
     "ingestion_result": {"operation_id"},
     "ingestion_cancel": {"preparation"},
@@ -32,7 +34,7 @@ FIELDS: dict[str, set[str]] = {
     "ingestion_file_finish": {"preparation", "handle", "sha256"},
     "ingestion_file_discard": {"preparation", "handle"},
 }
-OPTIONAL = {"part_id", "query", "action", "existing_id"}
+OPTIONAL = {"part_id", "query", "action", "existing_id", "metadata"}
 
 
 def validate_fields(raw: object) -> IngestionFields:
@@ -69,10 +71,15 @@ def validate(method: str, raw: object) -> dict[str, Any]:
     for key, value in result.items():
         if key == "fields":
             result[key] = validate_fields(value)
-        elif key == "selections":
+        elif key in {"selections", "metadata"}:
             if (
                 not isinstance(value, dict)
-                or set(value) - {r.value for r in AssetType}
+                or set(value)
+                - (
+                    {r.value for r in AssetType}
+                    if key == "selections"
+                    else {"mpn", "manufacturer", "category"}
+                )
                 or len(value) > 4
             ):
                 raise ValueError("Sélections invalides.")
@@ -122,6 +129,7 @@ def dispatch(ingestion: Ingestion, method: str, params: dict[str, Any]) -> objec
     handlers: dict[str, Callable[..., object]] = {
         "ingestion_begin": ingestion.begin,
         "ingestion_inspect": ingestion.inspect,
+        "ingestion_discover": ingestion.discover,
         "ingestion_search": ingestion.search,
         "ingestion_preview": ingestion.preview,
         "ingestion_commit": ingestion.commit,

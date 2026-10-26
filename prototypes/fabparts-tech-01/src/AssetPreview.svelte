@@ -1,4 +1,5 @@
 <script lang="ts">
+import { untrack } from 'svelte';
 import { invoke } from '@tauri-apps/api/core';
 import { Maximize2, X, RefreshCw } from '@lucide/svelte';
 import { tr } from './text';
@@ -14,7 +15,15 @@ const controller=new PreviewController(async (command,args)=>{
   if(command==='get_asset_preview' && prepared)return invoke('ingestion_command',{request:{method:'ingestion_preview',params:prepared}});
   return invoke(command,args);
 },p=>value=p);
-$effect(()=>{const id=prepared?.token || detail?.id;if(id)void controller.load(id,role,assetId);else value={status:'absent'};return ()=>controller.dispose();});
+const previewIdentity=$derived(prepared?.token || detail?.id || '');
+const preparationIdentity=$derived(prepared?.preparation || '');
+$effect(()=>{
+  const id=previewIdentity, preparation=preparationIdentity, currentRole=role, currentAsset=assetId;
+  void preparation;
+  // Transport reads the current prepared DTO; it must not subscribe this effect to its object identity.
+  untrack(()=>{if(id)void controller.load(id,currentRole,currentAsset);else value={status:'absent'};});
+  return ()=>controller.dispose();
+});
 function enlarge(){large=true;dialog.showModal();}function close(){large=false;dialog.close();}
 const labels = $derived({loading:tr('Chargement…','Loading…'),absent:tr('Aucune ressource sélectionnée','No resource selected'),missing:tr('Ressource introuvable','Resource not found'),inaccessible:tr('Ressource inaccessible','Resource inaccessible'),unsupported:tr('Format non pris en charge','Unsupported format'),too_large:tr('Aperçu hors limites','Preview exceeds limits'),error:tr('Erreur de lecture','Read error'),converter_missing:tr('Convertisseur STEP indisponible','STEP converter unavailable'),cancelled:tr('Conversion annulée','Conversion cancelled')} as Record<string,string>);
 </script>
