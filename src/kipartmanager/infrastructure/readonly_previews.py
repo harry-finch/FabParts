@@ -13,6 +13,7 @@ from kipartmanager.domain.asset_files import AssetFile
 from kipartmanager.domain.entities import AssetType, DomainError
 from kipartmanager.domain.kicad import KiCadReference
 from kipartmanager.infrastructure.kicad_index import LocalKiCadIndex
+from kipartmanager.infrastructure.kicad_parser import selected_symbol_library
 from kipartmanager.infrastructure.kicad_preview import drawings
 from kipartmanager.ports.previews import PDF_LIMIT, PreviewContent, PreviewProblem
 
@@ -72,6 +73,8 @@ class ReadonlyPreviews:
             return self.cache[key]
         try:
             text = data.decode("utf-8")
+            if kind is AssetType.SYMBOL and selected:
+                text = selected_symbol_library(text, selected, 100000)
             if text.count("(") > 100000:
                 raise PreviewProblem(
                     "too_large", "Fichier KiCad trop complexe (100 000 expressions maximum)."

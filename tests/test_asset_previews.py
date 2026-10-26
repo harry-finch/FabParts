@@ -249,3 +249,52 @@ def test_back_copper_is_not_mislabelled_front_copper() -> None:
     result = drawings(data, AssetType.FOOTPRINT)[0]
     assert not any(p.layer in {"Pads", "Pad1"} for p in result.primitives)
     assert any("hors cuivre avant" in warning for warning in result.warnings)
+
+
+def test_large_library_previews_only_selected_symbol_and_ancestors(tmp_path: Path) -> None:
+    import hashlib
+
+    from tests.test_previews import SYMBOL
+
+    path = tmp_path / "large.kicad_sym"
+    # Reproduce official Device/Regulator_Linear libraries exceeding the aggregate
+    # expression ceiling while the selected symbol and its parent remain small.
+    text = SYMBOL[:-1] + '(symbol "Unrelated" ' + "(unused x)" * 100001 + "))"
+    path.write_text(text)
+    raw = path.read_bytes()
+    preview = ReadonlyPreviews(tmp_path).read(
+        tmp_path, path.name, hashlib.sha256(raw).hexdigest(), AssetType.SYMBOL, "Child"
+    )
+    assert [d.unit for d in preview.drawings] == [1, 2]
+    assert all(d.name == "Child" for d in preview.drawings)
+    assert path.read_bytes() == raw
+    with pytest.raises(PreviewProblem) as error:
+        ReadonlyPreviews(tmp_path).read(
+            tmp_path, path.name, hashlib.sha256(raw).hexdigest(), AssetType.SYMBOL, "Unrelated"
+        )
+    assert error.value.status == "too_large"
+
+
+@pytest.mark.parametrize("mutation", ["missing", "cycle", "duplicate", "unclosed"])
+def test_selected_preview_still_refuses_invalid_libraries(tmp_path: Path, mutation: str) -> None:
+    import hashlib
+
+    from tests.test_previews import SYMBOL
+
+    text = SYMBOL
+    if mutation == "cycle":
+        text = text.replace('(extends "Base")', '(extends "Child")')
+    elif mutation == "duplicate":
+        text = text[:-1] + '(symbol "Base"))'
+    elif mutation == "unclosed":
+        text = text[:-1]
+    path = tmp_path / "invalid.kicad_sym"
+    path.write_text(text)
+    with pytest.raises(DomainError):
+        ReadonlyPreviews(tmp_path).read(
+            tmp_path,
+            path.name,
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+            AssetType.SYMBOL,
+            "Missing" if mutation == "missing" else "Child",
+        )
