@@ -1,7 +1,7 @@
 import { visibleTimeout } from '../src/pdf_render.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PreviewController, viewBox, zoomed, layerGroup, paintOrder } from '../src/preview.ts';
+import { PreviewController, fittedBounds, viewBox, zoomed, layerGroup, paintOrder } from '../src/preview.ts';
 const drawing={status:'ready',kind:'SYMBOL',drawings:[{name:'Real',primitives:[]}]};
 const pdf={status:'ready',kind:'DATASHEET',handle:'a'.repeat(48),size_bytes:3,chunk_bytes:65536};
 function setup(invoke){const states=[];return {states,controller:new PreviewController(invoke,s=>states.push(s))};}
@@ -44,4 +44,16 @@ test('PDF render deadline counts visible time and cleans up on cancellation', t=
  t.mock.timers.tick(7999);assert.equal(calls,0);t.mock.timers.tick(1);assert.equal(calls,1);
  const cancel=visibleTimeout(()=>calls++,10000,visibility);cancel();
  t.mock.timers.tick(10000);assert.equal(calls,1);
+});
+
+test('visible bounds fit tiny, large and elongated units with proportional margin',()=>{
+ for(const scale of [.0001,1,100000]) {
+  const box=fittedBounds({x:2*scale,y:-scale,width:10*scale,height:2*scale},.1*scale);
+  assert.ok(box[0]<2*scale && box[1]<-scale);
+  assert.ok(box[0]+box[2]>12*scale && box[1]+box[3]>scale);
+  assert.ok(Math.abs(box[2]/scale-11.7)<1e-8);
+ }
+ assert.equal(fittedBounds({x:0,y:0,width:0,height:0}),null);
+ assert.equal(fittedBounds({x:NaN,y:0,width:1,height:1}),null);
+ assert.ok(fittedBounds({x:0,y:0,width:0,height:10})[2]>0);
 });

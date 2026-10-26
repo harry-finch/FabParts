@@ -370,3 +370,11 @@ relire le journal sans rejouer l'écriture. La reprise reste disponible si M7 es
 illisible. Les décalages après restauration TECH-04A exigent une action explicite.
 Réutiliser Disclosure, boutons et tokens existants ; actions qui se replient et
 texte long sécable, FR/EN et clair/sombre. Pas de nouveau thème ni écran de réglages.
+
+### Cadrage des aperçus — finitions QUAL-01
+
+Le viewer SVG cadre le groupe visible après chargement des polices, avec une marge
+proportionnelle de 8 % et une réserve pour les traits. Ne pas imposer de taille
+physique minimale aux petits symboles. Recalculer pour l'unité/variante et les
+couches affichées ; conserver proportions, zoom manuel, recentrage et agrandissement.
+Les bornes conservatrices du moteur restent le repli, sans changement du parseur.

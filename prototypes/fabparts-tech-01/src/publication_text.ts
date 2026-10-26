@@ -14,6 +14,9 @@ const fr={
  "number_reserved_without_a_valid_publication": "Numéro réservé sans publication valide. Un nouveau numéro sera proposé.",
  "no_committed_version_prepare_again_before": "Aucune version engagée. Préparer à nouveau avant un nouvel essai.",
  "verified_reconstruction": "Reconstruction vérifiée : ",
+ "component": "composant",
+ "version": "version",
+ "file": "fichier",
  "components": "composants",
  "refresh": "Actualiser",
  "collection_qualification": "Qualification de la collection",
@@ -57,6 +60,9 @@ const en:Record<keyof typeof fr,string>={
  "number_reserved_without_a_valid_publication": "Number reserved without a valid publication. A new number will be proposed.",
  "no_committed_version_prepare_again_before": "No committed version. Prepare again before another attempt.",
  "verified_reconstruction": "Verified reconstruction: ",
+ "component": "component",
+ "version": "version",
+ "file": "file",
  "components": "components",
  "refresh": "Refresh",
  "collection_qualification": "Collection qualification",
@@ -86,3 +92,5 @@ const en:Record<keyof typeof fr,string>={
  "retry_reading": "Retry reading"
 };
 export const pt=(key:keyof typeof fr)=>i18n.locale==='fr'?fr[key]:en[key];
+
+export const publicationCount=(count:number,kind:"component"|"version"|"file")=>`${count} ${pt(count===1?kind:`${kind}s`)}`;

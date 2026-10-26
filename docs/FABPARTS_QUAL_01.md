@@ -177,3 +177,36 @@ références dans un même circuit. PersonalParts a été qualifié au niveau co
 sans publication/installation de cette collection pendant cette passe.
 
 QUAL-01 est proposé à revue par PR ; aucun merge automatique ni début de TECH-06.
+
+## Finitions UX avant fusion de QUAL-01
+
+Le viewer cadre désormais le groupe SVG réellement rendu (géométrie, rotations et
+métriques de police), avec 8 % de marge et la demi-largeur de trait. Le cadrage
+s'adapte à l'unité/variante et aux couches visibles ; zoom, recentrage et fenêtre
+agrandie restent disponibles. Les bornes fournies par Python servent de repli.
+Aucun parseur ni writer modifié. Les très petites/grandes géométries et lignes
+sans épaisseur sont couvertes par un test proportionnel ; chaque unité possède
+son propre groupe mesuré. Contrôle natif NE555D compact et agrandi, zoom/recentrage.
+Les décomptes de composants, versions et fichiers utilisent maintenant le singulier
+et le pluriel FR/EN ; l'aide readonly décrit la session plutôt qu'un ancien jalon.
+81 tests frontend réussis, Svelte check sans erreur/avertissement, bundle ARM64
+reconstruit et exécuté sur les données jetables.
+
+### UX-03 — Étude d'impact du nommage (mise en œuvre séparée)
+
+`BuildPart.symbol_name` et `footprint_name` déduisent actuellement les noms des UUID.
+M7 conserve un plan figé, mais exige aujourd'hui un unique `BUILDER_VERSION=M6-1`
+à la lecture et appelle le writer courant lors de la reconstruction. Remplacer ce
+nommage en place changerait donc les octets historiques : **aucun changement M6-1**.
+
+Solution proposée pour une PR dédiée : garder le dispatcher M6-1 intact ; ajouter
+un builder versionné et un mapping de noms figé dans chaque nouveau snapshot.
+Les noms combineraient une base lisible nettoyée (référence/package au premier
+export) et l'identité UUID complète comme suffixe garantissant l'unicité. Un registre
+persistant par identité préserverait cette base après renommage ; les parents
+hérités recevraient un suffixe réservé et distinct. La collision entre noms publics,
+parents et packages serait vérifiée avant engagement. Le nickname de collection
+TECH-05B resterait stable. Prévoir une évolution explicite du schéma/mapping,
+validation du manifest, dispatcher de reconstruction et tests M7/installation,
+renommage, collision et reprise. Cette évolution mérite sa propre PR avant mise en
+œuvre ; elle n'est pas mêlée à la recherche guidée TECH-06A.

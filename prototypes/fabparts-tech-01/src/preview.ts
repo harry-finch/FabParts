@@ -5,6 +5,13 @@ export type Drawing = {name:string;unit:number;style:number;units:'mm';bounds:nu
 export type Preview = {status:string;message?:string;kind?:string;name?:string;origin?:string;source?:string;sha256?:string;selected?:boolean;storage?:string;drawings?:Drawing[];handle?:string;size_bytes?:number;chunk_bytes?:number;bytes?:Uint8Array;mesh?:MeshData;vertices?:number;triangles?:number;units?:string;warnings?:string[];mesh_sha256?:string};
 export const zoomed = (zoom:number, factor:number) => Math.min(8,Math.max(.5,zoom*factor));
 export function viewBox(bounds:number[], zoom=1) {const [x,y,w,h]=bounds;return [x+w/2-w/zoom/2,y+h/2-h/zoom/2,w/zoom,h/zoom].join(' ');}
+// Bounds of the displayed SVG group, in source units. No physical-size minimum.
+export function fittedBounds(box:{x:number;y:number;width:number;height:number}, stroke=0):number[]|null {
+  const {x,y,width:w,height:h}=box;
+  if(![x,y,w,h,stroke].every(Number.isFinite)||w<0||h<0||Math.max(w,h)===0)return null;
+  const margin=Math.max(w,h)*.08+Math.max(0,stroke)/2;
+  return [x-margin,y-margin,w+2*margin,h+2*margin];
+}
 export const layerGroup = (layer:string) => ['Pads','Pad1','PadLabel','Drill'].includes(layer) ? 'F.Cu' : layer;
 export const layerColor = (layer:string):string => ({Pad1:'var(--accent-text)',Pads:'var(--accent)',PadLabel:'var(--text-primary)',Drill:'var(--bg-workspace)', 'F.Cu':'var(--accent)', 'F.SilkS':'var(--text-primary)','F.Fab':'var(--info)','F.CrtYd':'var(--text-secondary)',Body:'var(--text-primary)',Pins:'var(--accent-text)'}[layer] || 'var(--text-secondary)');
 export class PreviewController {
