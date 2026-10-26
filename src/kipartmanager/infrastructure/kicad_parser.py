@@ -24,7 +24,7 @@ class Node:
         return matches[0].atoms[1] if matches and len(matches[0].atoms) > 1 else ""
 
 
-def tokens(text: str) -> Iterator[tuple[str, str]]:
+def token_spans(text: str) -> Iterator[tuple[str, str, int, int]]:
     index = 0
     while index < len(text):
         char = text[index]
@@ -34,9 +34,10 @@ def tokens(text: str) -> Iterator[tuple[str, str]]:
             end = text.find("\n", index)
             index = len(text) if end < 0 else end + 1
         elif char in "()":
-            yield char, char
+            yield char, char, index, index + 1
             index += 1
         elif char == '"':
+            start = index
             index += 1
             value: list[str] = []
             while index < len(text) and text[index] != '"':
@@ -50,13 +51,79 @@ def tokens(text: str) -> Iterator[tuple[str, str]]:
                 index += 1
             if index >= len(text):
                 raise KiCadError("Chaîne non terminée.")
-            yield "string", "".join(value)
+            yield "string", "".join(value), start, index + 1
             index += 1
         else:
             start = index
             while index < len(text) and not text[index].isspace() and text[index] not in '();"':
                 index += 1
-            yield "atom", text[start:index]
+            yield "atom", text[start:index], start, index
+
+
+def tokens(text: str) -> Iterator[tuple[str, str]]:
+    for token, value, _, _ in token_spans(text):
+        yield token, value
+
+
+def selected_symbol_library(text: str, selected: str, max_expressions: int) -> str:
+    """Keep root metadata and one inheritance chain before allocating its AST.
+
+    The existing lexer checks strings/escapes. Spans retain exact source syntax;
+    structural validation also covers discarded entries without retaining their nodes.
+    """
+    stack: list[bool] = []
+    root_atoms: list[str] = []
+    child_atoms: list[str] = []
+    metadata: list[str] = []
+    entries: dict[str, tuple[int, int]] = {}
+    start = 0
+    finished = False
+    for token, value, a, b in token_spans(text):
+        if finished:
+            raise KiCadError("Plusieurs racines S-expression.")
+        if token == "(":
+            if len(stack) == 1:
+                start, child_atoms = a, []
+            stack.append(False)
+            if len(stack) > 128:
+                raise KiCadError("Imbrication excessive.")
+        elif token == ")":
+            if not stack or not stack.pop():
+                raise KiCadError("Parenthèse inattendue ou expression vide.")
+            if len(stack) == 1:
+                if child_atoms[0] == "symbol":
+                    if len(child_atoms) != 2 or child_atoms[1] in entries:
+                        raise KiCadError("Identité de symbole absente ou dupliquée.")
+                    entries[child_atoms[1]] = start, b
+                else:
+                    metadata.append(text[start:b])
+            finished = not stack
+        elif stack:
+            stack[-1] = True
+            if len(stack) == 1:
+                root_atoms.append(value)
+            elif len(stack) == 2:
+                child_atoms.append(value)
+        else:
+            raise KiCadError("Atome hors expression.")
+    if not finished or root_atoms != ["kicad_symbol_lib"]:
+        raise KiCadError("Bibliothèque de symboles vide, invalide ou non terminée.")
+    kept: list[str] = []
+    seen: set[str] = set()
+    cost = sum(part.count("(") for part in metadata) + 1
+    current = selected
+    while current:
+        if current in seen or current not in entries or len(seen) >= 64:
+            raise KiCadError("Héritage absent, cyclique ou trop profond.")
+        seen.add(current)
+        a, b = entries[current]
+        part = text[a:b]
+        cost += part.count("(")
+        if cost > max_expressions:
+            raise KiCadError("Aperçu trop complexe (100 000 expressions maximum).")
+        kept.append(part)
+        current = parse(part).value("extends")
+    return "(kicad_symbol_lib\n" + "\n".join(metadata + kept) + ")"
 
 
 def parse(text: str) -> Node:

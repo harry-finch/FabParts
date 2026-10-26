@@ -18,8 +18,8 @@ const fr = {
   associated:'Associée', selected:'Sélectionnée', external:'Référence KiCad externe', unknown:'Non renseigné',
   properties:'Propriétés', manufacturer:'Fabricant', category:'Catégorie', technical:'Détails techniques',
   previous:'Précédent', next:'Suivant', closeInspector:'Masquer les détails', openInspector:'Afficher les détails',
-  readonly:'Consultation seule. Ajout, modification et publication hors périmètre.',
-  add:'Ajouter', noWrite:'Ajout indisponible dans ce prototype en lecture seule', documents:'Documents',
+  readonly:'Consultation seule. Les modifications sont désactivées.',
+  add:'Ajouter', noWrite:'Ajout indisponible en lecture seule', documents:'Documents',
   symbol:'Symbole', footprint:'Empreinte', model:'Modèle 3D', datasheet:'Datasheet', missing:'Non associée',
   noPreview:'Les métadonnées ci-dessous proviennent du moteur. Aucun aperçu de démonstration.',
   resize:'Redimensionner les détails', results:'résultat(s)', source:'Origine', file:'Fichier', hash:'SHA-256',
@@ -39,7 +39,7 @@ const en: Record<keyof typeof fr,string> = {
   empty:'No components',emptyHint:'This library or search contains no components.',clear:'Clear filters',select:'Select a component',details:'Open details',back:'Libraries',resources:'Resources',
   noResource:'No associated resource',preview:'View previews in component details',qualification:'Technical qualification not evaluated in this prototype',associated:'Associated',selected:'Selected',external:'External KiCad reference',unknown:'Not specified',
   properties:'Properties',manufacturer:'Manufacturer',category:'Category',technical:'Technical details',previous:'Previous',next:'Next',closeInspector:'Hide details',openInspector:'Show details',
-  readonly:'Read only. Adding, editing and publishing are out of scope.',add:'Add',noWrite:'Adding is unavailable in this read-only prototype',documents:'Documents',symbol:'Symbol',footprint:'Footprint',model:'3D model',datasheet:'Datasheet',missing:'Not associated',
+  readonly:'Read only. Changes are disabled.',add:'Add',noWrite:'Adding is unavailable in read-only mode',documents:'Documents',symbol:'Symbol',footprint:'Footprint',model:'3D model',datasheet:'Datasheet',missing:'Not associated',
   noPreview:'The metadata below comes from the engine. No demonstration preview.',resize:'Resize details',results:'result(s)',source:'Origin',file:'File',hash:'SHA-256',
 };
 export const text = (key: keyof typeof fr) => (i18n.locale === 'fr' ? fr : en)[key];

@@ -45,3 +45,18 @@ test('a readonly copy or different workspace cannot clear another workspace pend
 test('a builder refusal remains actionable after confirming no COMMIT exists',async()=>{
  const {flow,recovery}=setup(async(cmd)=>{if(cmd==='publish_version')throw{code:'DOMAIN_ERROR',message:'Unresolved 3D link'};return{status:'ABSENT'};});await flow.select('collection');await flow.prepare();flow.confirm(true);await flow.publish();assert.equal(flow.state.error,'DOMAIN_ERROR');assert.equal(flow.state.errorMessage,'Unresolved 3D link');assert.equal(flow.state.notice,'absent');assert.equal(recovery.get(),null);
 });
+
+test('publication counts use singular and plural in both locales',async()=>{
+ const {createServer}=await import('vite');const server=await createServer({server:{middlewareMode:true,hmr:false,ws:false},appType:'custom'});
+ try {
+  const {publicationCount}=await server.ssrLoadModule('/src/publication_text.ts');
+  const {i18n}=await server.ssrLoadModule('../fabparts-ux/src/lib/i18n.svelte.ts');
+  for(const locale of ['fr','en']) {
+   i18n.locale=locale;
+   assert.equal(publicationCount(1,'component'),locale==='fr'?'1 composant':'1 component');
+   assert.equal(publicationCount(2,'component'),locale==='fr'?'2 composants':'2 components');
+   assert.equal(publicationCount(1,'version'),'1 version');
+   assert.equal(publicationCount(0,'version'),'0 versions');
+  }
+ } finally {await server.close();}
+});

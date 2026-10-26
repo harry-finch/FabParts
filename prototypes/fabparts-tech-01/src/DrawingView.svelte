@@ -1,10 +1,24 @@
 <script lang="ts">
+import { tick } from 'svelte';
 import { tr } from './text';
 import { ZoomIn, ZoomOut, Scan } from '@lucide/svelte';
-import { type Drawing, zoomed, viewBox, paintOrder, layerGroup, layerColor } from './preview';
+import { type Drawing, fittedBounds, zoomed, viewBox, paintOrder, layerGroup, layerColor } from './preview';
 let { drawings, large=false }: {drawings:Drawing[];large?:boolean}=$props();
 let index=$state(0), zoom=$state(1), hidden=$state<string[]>([]);
 let drawing=$derived(drawings[index] || drawings[0]);
+let geometry:SVGGElement;
+let fitted=$state<number[]|null>(null);
+// Measure rendered geometry and actual font metrics; keep the parser bounds as fallback.
+$effect(()=>{
+  const current=drawing; void hidden; fitted=null; zoom=1; let cancelled=false;
+  void (async()=>{
+    await tick(); await document.fonts.ready;
+    if(cancelled||!geometry)return;
+    const box=geometry.getBBox();
+    fitted=fittedBounds(box,Math.max(0,...current.primitives.map(p=>p.width)));
+  })();
+  return ()=>{cancelled=true;};
+});
 let layers=$derived([...new Set(drawing.primitives.map(p=>layerGroup(p.layer)))]);
 </script>
 <div class="drawing-view" class:large>
@@ -12,7 +26,8 @@ let layers=$derived([...new Set(drawing.primitives.map(p=>layerGroup(p.layer)))]
 {#if drawings.length>1}<label>{tr('Unité / variante','Unit / variant')} <select bind:value={index} onchange={()=>zoom=1}>{#each drawings as d,i}<option value={i}>{d.name} · {d.unit} / {d.style}</option>{/each}</select></label>{/if}
 <button title={tr('Zoom arrière','Zoom out')} aria-label={tr('Zoom arrière','Zoom out')} onclick={()=>zoom=zoomed(zoom,1/1.5)}><ZoomOut size={14}/></button><button title={tr('Zoom avant','Zoom in')} aria-label={tr('Zoom avant','Zoom in')} onclick={()=>zoom=zoomed(zoom,1.5)}><ZoomIn size={14}/></button><button title={tr('Recentrer','Fit drawing')} aria-label={tr('Recentrer','Fit drawing')} onclick={()=>zoom=1}><Scan size={14}/></button>
 </div>
-<svg role="img" aria-label={drawing.name} viewBox={viewBox(drawing.bounds,zoom)} preserveAspectRatio="xMidYMid meet">
+<svg role="img" aria-label={drawing.name} viewBox={viewBox(fitted || drawing.bounds,zoom)} preserveAspectRatio="xMidYMid meet">
+<g bind:this={geometry}>
 {#each paintOrder(drawing.primitives).filter(p=>!hidden.includes(layerGroup(p.layer))) as p}
 {@const a=p.points[0]}{@const b=p.points[1] || a}
 <g fill={p.filled ? layerColor(p.layer) : 'none'} stroke={layerColor(p.layer)} stroke-width={p.width} stroke-linejoin="round" stroke-linecap="round">
@@ -24,6 +39,7 @@ let layers=$derived([...new Set(drawing.primitives.map(p=>layerGroup(p.layer)))]
 {:else if p.kind==='polygon'}<polygon points={p.points.map(pt=>pt.join(',')).join(' ')}/>
 {:else}<polyline points={p.points.map(pt=>pt.join(',')).join(' ')}/>{/if}
 </g>{/each}
+</g>
 </svg>
 {#if layers.includes('F.Cu')}<details class="layers" open={large}><summary>{tr('Couches','Layers')}</summary><div>{#each layers as layer}<label><input type="checkbox" checked={!hidden.includes(layer)} onchange={()=>hidden=hidden.includes(layer)?hidden.filter(l=>l!==layer):[...hidden,layer]}/><span style:color={layerColor(layer)}>{layer}</span></label>{/each}</div></details>{/if}
 {#if drawing.warnings.length}<p class="warning" role="status">{tr('Aperçu partiel','Partial preview')} · {drawing.warnings.join(' ')}</p>{/if}
