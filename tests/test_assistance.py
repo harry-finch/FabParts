@@ -132,6 +132,7 @@ def test_configuration_consent_absence_and_exact_destination(tmp_path: Path) -> 
         '{"values":{"mpn":"X","mpn":"Y"}}',
         '{"values":{"mpn":"X"},"execute":"command"}',
         '{"values":[]}',
+        '{"values":{"mpn":"\\ud800"}}',
         '{"values":{"notes":"' + "x" * 4097 + '"}}',
     ],
 )

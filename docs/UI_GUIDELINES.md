@@ -411,3 +411,18 @@ réinitialisée à chaque modification/téléchargement. Annulation et erreurs r
 laissent accessibles navigation et parcours local. Les fichiers téléchargés sont
 identifiés comme tels, distincts des fichiers fournis. FR/EN et tokens Fab existants,
 sans quatrième étape ni nouveau système de styles.
+
+### Assistance IA facultative — TECH-06C
+
+Dans la fiche complète, une divulgation « Assistance IA · facultative » conserve
+le travail principal et les ressources visibles. Les paramètres réutilisent les
+tokens et formulaires Fab ; fournisseur, endpoint, modèle existant et activation,
+sans champ de clé ni découverte automatique.
+
+Le contexte textuel (16 000 caractères) et l'inclusion facultative de l'identification
+sont relus dans le JSON utilisateur exact, avec destination réelle et modèle.
+Le consentement est décoché et révoqué par toute modification. Les quatre champs
+IA restent des propositions non vérifiées, tous décochés à réception. Un remplacement
+coché exige sa confirmation séparée. Ignorer/annuler ne change pas les données ;
+le réseau ne bloque pas la navigation. Une erreur n'entraîne aucun retry automatique.
+Les libellés des nouvelles sections sont FR/EN, sans nouvelle page ni refonte.

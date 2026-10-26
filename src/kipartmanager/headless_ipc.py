@@ -11,12 +11,20 @@ from uuid import UUID
 
 from kipartmanager import __version__
 from kipartmanager.application.asset_previews import AssetPreviews
+from kipartmanager.application.assistance_review import AssistanceReview
 from kipartmanager.application.catalogue_reader import CatalogueReader
 from kipartmanager.application.external_sources import ExternalSources
 from kipartmanager.application.ingestion import Ingestion
 from kipartmanager.application.kicad_integration import KiCadIntegration
 from kipartmanager.application.publication_review import PublicationReview
 from kipartmanager.application.validation_review import ReportChanged, ValidationReview
+from kipartmanager.assistance_ipc import METHODS as ASSISTANCE_METHODS
+from kipartmanager.assistance_ipc import (
+    dispatch as dispatch_assistance,
+)
+from kipartmanager.assistance_ipc import (
+    validate as validate_assistance,
+)
 from kipartmanager.domain.entities import DomainError, PartState
 from kipartmanager.external_ipc import METHODS as EXTERNAL_METHODS
 from kipartmanager.external_ipc import dispatch as dispatch_external
@@ -43,6 +51,8 @@ from kipartmanager.validation_ipc import validate as validate_validation
 
 PROTOCOL_VERSION = 1
 MAX_REQUEST = 16 * 1024
+# Only assistance_prepare may carry 16 000 Unicode characters (including JSON escapes).
+MAX_ASSISTANCE_REQUEST = 256 * 1024
 MAX_RESPONSE = 2 * 1024 * 1024
 
 
@@ -138,14 +148,17 @@ def respond(
     publications: PublicationReview | None = None,
     integration: KiCadIntegration | None = None,
     external: ExternalSources | None = None,
+    assistance: AssistanceReview | None = None,
 ) -> dict[str, Any]:
     identity = None
     try:
-        if len(raw) > MAX_REQUEST:
+        if len(raw) > MAX_ASSISTANCE_REQUEST:
             raise ProtocolError("FRAME_TOO_LARGE", "Requête trop volumineuse.")
         try:
             request = json.loads(raw)
         except (ValueError, UnicodeError) as error:
+            if len(raw) > MAX_REQUEST:
+                raise ProtocolError("FRAME_TOO_LARGE", "Requête trop volumineuse.") from error
             raise ProtocolError("INVALID_JSON", "Message JSON invalide.") from error
         if not isinstance(request, dict):
             raise ProtocolError("INVALID_REQUEST", "Objet de requête requis.")
@@ -160,6 +173,27 @@ def respond(
         method = request["method"]
         if not isinstance(method, str):
             raise ProtocolError("INVALID_REQUEST", "Nom de commande requis.")
+        if len(raw) > MAX_REQUEST and method != "assistance_prepare":
+            raise ProtocolError("FRAME_TOO_LARGE", "Requête trop volumineuse.")
+        if method in ASSISTANCE_METHODS:
+            if (
+                ingestion is None
+                or assistance is None
+                or bool(workspace and workspace.requires_restart)
+            ):
+                raise ProtocolError("READ_ONLY", "Assistance unavailable in this session")
+            if ingestion.preparation is not None:
+                raise ProtocolError("BUSY", "Finish the active preparation first")
+            try:
+                params = validate_assistance(method, request["params"])
+            except (ValueError, TypeError, AttributeError) as error:
+                raise ProtocolError("INVALID_PARAMS", "Invalid assistance parameters") from error
+            return {
+                "protocol_version": 1,
+                "request_id": identity,
+                "ok": True,
+                "result": dispatch_assistance(assistance, method, params),
+            }
         if method in EXTERNAL_METHODS:
             if (
                 ingestion is None
@@ -269,6 +303,8 @@ def respond(
                 "workspace_verify": lambda: workspace.verify(Path(params["path"])),
                 "workspace_restore": lambda: workspace.restore(params["handle"]),
             }
+            if assistance and method == "workspace_restore":
+                assistance.close()
             result = operations[method]()
             return {"protocol_version": 1, "request_id": identity, "ok": True, "result": result}
         if method in INGESTION_METHODS:
@@ -280,6 +316,8 @@ def respond(
                 params = validate_ingestion(method, request["params"])
             except (ValueError, TypeError) as error:
                 raise ProtocolError("INVALID_PARAMS", str(error)) from error
+            if assistance and method == "ingestion_begin":
+                assistance.close()
             if external and method in {"ingestion_begin", "ingestion_cancel", "ingestion_commit"}:
                 external.close()
             result = dispatch(ingestion, method, params)
@@ -352,9 +390,10 @@ def serve(
     publications: PublicationReview | None = None,
     integration: KiCadIntegration | None = None,
     external: ExternalSources | None = None,
+    assistance: AssistanceReview | None = None,
 ) -> None:
-    while raw := source.readline(MAX_REQUEST + 1):
-        if len(raw) > MAX_REQUEST:
+    while raw := source.readline(MAX_ASSISTANCE_REQUEST + 1):
+        if len(raw) > MAX_ASSISTANCE_REQUEST:
             response = error_response(None, "FRAME_TOO_LARGE", "Requête trop volumineuse.")
             destination.write(json.dumps(response).encode() + b"\n")
             destination.flush()
@@ -373,6 +412,7 @@ def serve(
                 publications,
                 integration,
                 external,
+                assistance,
             )
         encoded = json.dumps(response, ensure_ascii=False, allow_nan=False).encode()
         if len(encoded) > MAX_RESPONSE:
@@ -383,5 +423,7 @@ def serve(
             ).encode()
         destination.write(encoded + b"\n")
         destination.flush()
+        if response.get("error", {}).get("code") == "FRAME_TOO_LARGE":
+            return
         if response.get("ok") and response.get("result") == {"stopping": True}:
             return

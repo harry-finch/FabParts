@@ -109,6 +109,8 @@ def parse_suggestions(raw: str) -> tuple[FieldValue, ...]:
         proposed = tuple(FieldValue(MetadataField(k), v) for k, v in values.items())
         if any(not v.value.strip() for v in proposed):
             raise ValueError
+        for value in proposed:
+            value.value.encode("utf-8")  # Reject unpaired JSON surrogates before IPC/history.
         return proposed
     except (ValueError, TypeError, AttributeError):
         raise DomainError("Réponse IA structurée invalide ; aucun changement enregistré.") from None
@@ -211,7 +213,7 @@ class ChatAssistance:
                 if choice["finish_reason"] != "stop" or choice["message"].get("refusal"):
                     raise ValueError
                 raw = choice["message"]["content"]
-            if secret and secret in json.dumps(data):
+            if secret and secret in json.dumps(data, ensure_ascii=False):
                 raise ValueError
             values = parse_suggestions(raw)
             if not values:
@@ -237,3 +239,15 @@ class ChatAssistance:
             raise DomainError(
                 "Réponse IA invalide ou incomplète ; aucun changement enregistré."
             ) from None
+
+
+def protect_secret(text: str) -> None:
+    """Prevent either known environment key from crossing a UI/history boundary."""
+    if any(
+        value and value in text
+        for name in ("GEMINI_API_KEY", "KIPART_AI_API_KEY")
+        if (value := os.environ.get(name, ""))
+    ):
+        raise DomainError(
+            "Secret dans les données ; opération refusée / Secret in data; operation refused"
+        )

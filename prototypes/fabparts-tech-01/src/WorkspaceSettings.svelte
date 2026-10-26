@@ -5,6 +5,7 @@ import {invoke} from '@tauri-apps/api/core';
 import {ArrowLeft,Save,FolderOpen,RotateCcw} from '@lucide/svelte';
 import Section from '../../fabparts-ux/src/components/Section.svelte';
 import ExternalSettings from './ExternalSettings.svelte';
+import AssistanceSettings from './AssistanceSettings.svelte';
 import {i18n} from '../../fabparts-ux/src/lib/i18n.svelte';
 import {WorkspaceController,workspaceInitial,type WorkspaceState} from './workspace';
 import {workspaceText as t} from './workspace_text';
@@ -36,6 +37,7 @@ async function restart(){await onrestart();}
   {/if}
  </Section>
  <ExternalSettings disabled={state.busy||state.restart}/>
+ <AssistanceSettings disabled={state.busy||state.restart}/>
  {:else if !state.error}<p>{t('loading')}</p>{/if}
  {#if state.busy}<p role="status">{t('busy')}</p>{/if}
  {#if state.error}<div role="alert"><p class="error-text">{t('failed')}</p><p class="secondary">{state.error}</p><p class="secondary">{t('uncertain')}</p></div>{/if}

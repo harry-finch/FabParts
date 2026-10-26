@@ -5,6 +5,14 @@ use tauri::async_runtime::Receiver;
 use tauri_plugin_shell::process::CommandEvent;
 use tokio::sync::watch;
 
+pub fn request_limit(method: &str) -> usize {
+    if method == "assistance_prepare" {
+        256 * 1024
+    } else {
+        16 * 1024
+    }
+}
+
 pub const MAX_FRAME: usize = 2 * 1024 * 1024;
 pub const TIMEOUT: Duration = Duration::from_secs(8);
 pub const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
