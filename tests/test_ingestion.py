@@ -102,7 +102,7 @@ def save(
     begin: dict[str, Any],
     value: IngestionFields,
     selections: dict[str, str] | None = None,
-    **kwargs: str,
+    **kwargs: Any,
 ) -> dict[str, str]:
     return service.commit(
         begin["preparation"], begin["operation_id"], value, selections or {}, **kwargs

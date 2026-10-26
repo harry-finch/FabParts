@@ -138,3 +138,48 @@ test('local index notices remain visible after other role searches',async()=>{
   await flow.begin();await flow.search('SYMBOL');await flow.search('DATASHEET');await flow.search('SYMBOL');
   assert.deepEqual(flow.state.notices,['Local index missing']);
 });
+
+test('guided discovery publishes each role without selecting or changing typed metadata',async()=>{
+ const metadata=[{token:'m',field:'manufacturer',value:'Suggested maker',source:'Local profile'}];
+ const {flow,calls,states}=setup({ingestion_discover:({role})=>({candidates:[{token:role,role,name:'Found',storage:'reference'}],metadata,packages:[],similar:[],notices:[]})});
+ await flow.begin();flow.edit({reference:'NE555D',manufacturer:'Typed maker'});await flow.discover();
+ assert.deepEqual(calls.filter(([m])=>m==='ingestion_discover').map(([,p])=>p.role),['SYMBOL','FOOTPRINT','MODEL_3D','DATASHEET']);
+ assert.ok(states.some(s=>s.discovering&&s.candidates.length===1));
+ assert.equal(flow.state.fields.manufacturer,'Typed maker');assert.deepEqual(flow.state.selections,{});
+ flow.preview('SYMBOL','SYMBOL');assert.deepEqual(flow.state.selections,{});
+ flow.choose('SYMBOL','SYMBOL');flow.acceptMetadata(metadata[0]);await flow.commit();
+ const params=calls.find(([m])=>m==='ingestion_commit')[1];
+ assert.deepEqual(params.selections,{SYMBOL:'SYMBOL'});assert.deepEqual(params.metadata,{manufacturer:'m'});
+});
+
+test('changing identity during discovery discards late suggestions and preserves user resource',async()=>{
+ let finish;const {flow}=setup({ingestion_discover:()=>new Promise(r=>finish=r)});
+ await flow.begin();flow.edit({reference:'Old'});flow.choose('SYMBOL','provided');
+ const pending=flow.discover();await new Promise(r=>setTimeout(r,0));flow.edit({reference:'New'});
+ finish({candidates:[{token:'stale',role:'SYMBOL'}],metadata:[],packages:[],similar:[],notices:[]});await pending;
+ assert.equal(flow.state.fields.reference,'New');assert.deepEqual(flow.state.selections,{SYMBOL:'provided'});
+ assert.equal(flow.state.candidates.length,0);assert.equal(flow.state.discovering,false);
+});
+
+test('manual editing removes accepted provenance and empty discovery keeps import available',async()=>{
+ const item={token:'m',field:'mpn',value:'Known',source:'Profile'};
+ const {flow}=setup({ingestion_discover:()=>({candidates:[],metadata:[item],packages:[],similar:[],notices:['INDEX_UNAVAILABLE']})});
+ await flow.begin();flow.edit({reference:'Unknown'});await flow.discover();flow.acceptMetadata(item);
+ assert.deepEqual(flow.state.acceptedMetadata,{mpn:'m'});flow.edit({mpn:'Manual'});
+ assert.deepEqual(flow.state.acceptedMetadata,{});assert.deepEqual(flow.state.selections,{});
+ assert.ok(flow.state.session);assert.ok(flow.state.notices.includes('INDEX_UNAVAILABLE'));
+});
+
+test('package inspection preserves discovery reasons for stable resource capabilities',async()=>{
+ const candidate={token:'sym',role:'SYMBOL',name:'S',storage:'reference'};
+ const {flow}=setup({ingestion_discover:({role})=>({candidates:role==='SYMBOL'?[{...candidate,match:'exact',reason:'name_match'}]:[],metadata:[],packages:[],similar:[],notices:[]}),ingestion_inspect:()=>({duplicates:[],package_selections:{},candidates:[candidate]})});
+ await flow.begin();flow.edit({reference:'S'});await flow.discover();await flow.inspect(true);
+ assert.equal(flow.state.candidates.find(c=>c.token==='sym').reason,'name_match');
+});
+
+test('manual continuation searches the entered identity rather than suggesting unrelated assets',async()=>{
+ const {flow,calls}=setup();await flow.begin();flow.edit({reference:'10 kΩ 0603'});
+ await flow.next();await flow.next();
+ const searches=calls.filter(([method])=>method==='ingestion_search');
+ assert.equal(searches.length,4);assert.ok(searches.every(([,params])=>params.query==='10 kΩ 0603'));
+});

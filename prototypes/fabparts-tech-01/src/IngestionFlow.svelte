@@ -23,6 +23,9 @@ async function cancel(){if(await flow.cancel())oncancel();}
 async function existing(id:string){if(await flow.cancel())await onexisting(id);}
 function membership(id:string){const collections=s.fields.collections.includes(id)?s.fields.collections.filter(v=>v!==id):[...s.fields.collections,id];flow.edit({collections});}
 async function packageChanged(value:string){flow.edit({package_id:value,package_name:''});await flow.inspect(true);}
+const matchLabel=(match?:string)=>match==='exact'?tr('Nom exact · compatibilité à vérifier','Exact name · check compatibility'):match==='declared'?tr('Lien déclaré · à vérifier','Declared link · review required'):tr('Correspondance indicative','Indicative match');
+const reasonLabel=(reason?:string)=>({name_match:tr('Recherche par nom','Name search'),catalogue_choice:tr('Choix du composant existant','Existing component selection'),catalogue_document:tr('Document du composant existant','Existing component document'),symbol_footprint:tr('Empreinte déclarée par le symbole · pins/pads concordants','Symbol footprint property · matching pin/pad numbers'),footprint_model:tr('Chemin 3D déclaré par l’empreinte','3D path declared by the footprint')} as Record<string,string>)[reason||'']||tr('Recherche locale','Local search');
+
 </script>
 
 <section class="add-flow" aria-busy={s.busy}>
@@ -59,6 +62,7 @@ async function packageChanged(value:string){flow.edit({package_id:value,package_
       </div>
     {:else if s.step===1}
       <div class="intro"><h2>{tr('Identifier sans deviner','Identify without guessing')}</h2><p>{tr('Complétez les informations connues. Le package peut être choisi plus tard.','Fill in the information you know. You can choose a package later.')}</p></div>
+      <button class="btn primary" disabled={s.discovering} onclick={()=>flow.discover()}><Search size={14}/>{tr('Rechercher des ressources','Find resources')}</button>
       <div class="input-columns">
         <div class="form-section">
           <h3>{tr('Composant','Component')}</h3>
@@ -81,29 +85,44 @@ async function packageChanged(value:string){flow.edit({package_id:value,package_
       </div>
     {:else}
       <div class="intro review-intro"><div><h2>{s.fields.reference||s.fields.mpn} <span class="secondary">· {s.fields.manufacturer} · {s.fields.package_name||s.session.packages.find(p=>p.id===s.fields.package_id)?.name||tr('Package à compléter','Package missing')}</span></h2><p>{tr('Choisissez explicitement les ressources à conserver et examinez leurs aperçus.','Explicitly choose which resources to keep and inspect their previews.')}</p></div><button class="btn" onclick={()=>flow.back(1)}>{tr('Modifier','Edit')}</button></div>
+      <div class="row"><button class="btn" disabled={s.discovering} onclick={()=>flow.discover()}><Search size={14}/>{tr('Rechercher des ressources','Find resources')}</button><span class="small secondary" role="status">{s.discovering?tr('Recherche locale en cours… les résultats apparaissent par ressource.','Searching locally… results appear by resource.'):s.discovered?tr('Propositions locales · aucun choix automatique','Local suggestions · no automatic selection'):''}</span></div>
+      {#if s.metadata.length||s.proposedPackages.length}<Disclosure id="guided-metadata" label={tr('Informations locales proposées','Suggested local information')}>
+        <p class="small secondary">{tr('Chaque valeur retenue garde sa provenance. Les champs saisis restent prioritaires.','Each accepted value retains its source. Entered fields take precedence.')}</p>
+        {#each s.metadata as item}<div class="row"><span class="small">{item.field==='manufacturer'?tr('Fabricant','Manufacturer'):item.field==='category'?tr('Catégorie','Category'):'MPN'} : <strong>{item.value}</strong> · {item.source}</span><button class="btn quiet" disabled={s.discovering||s.acceptedMetadata[item.field]===item.token} onclick={()=>flow.acceptMetadata(item)}>{s.acceptedMetadata[item.field]===item.token?tr('Retenue','Accepted'):s.fields[item.field]&&s.fields[item.field]!==item.value?tr('Remplacer ce champ','Replace this field'):tr('Retenir ce champ','Accept this field')}</button></div>{/each}
+        {#each s.proposedPackages as pkg}<div class="row"><span class="small">{pkg.name} · {pkg.source}</span><button class="btn quiet" disabled={s.discovering||s.fields.package_id===pkg.id} onclick={()=>packageChanged(pkg.id)}>{tr('Utiliser ce package et ses ressources partagées','Use this package and its shared resources')}</button></div>{/each}
+      </Disclosure>{/if}
+      {#if s.similar.length}<p class="small secondary">{tr('Composants similaires du catalogue : ','Similar catalogue components: ')}{s.similar.map(p=>p.name).join(' · ')}</p>{/if}
       <div class="resources-grid">
         {#each ingestionRoles as role}
           {@const Icon=icons[role]}
           {@const selected=s.candidates.find(c=>c.token===s.selections[role])}
+          {@const previewToken=s.previewing[role]??selected?.token??s.candidates.find(c=>c.role===role)?.token??''}
+          {@const proposed=s.candidates.find(c=>c.token===previewToken)}
           {@const shared=!!s.fields.package_id && ['FOOTPRINT','MODEL_3D'].includes(role)}
           <section class="resource">
             <header><span><Icon size={14}/>{roleLabel(role)}</span><span class="secondary small">{tr('Non validée','Not validated')}</span></header>
             <div class="resource-choice">
-              <div class="resource-select"><label><span class="sr-only">{tr('Ressource','Resource')}</span><select class="input" value={s.selections[role]||''} disabled={shared} onchange={e=>flow.choose(role,e.currentTarget.value)} aria-label={tr('Choisir : ','Choose: ')+roleLabel(role)}>
-                <option value="" disabled={!!s.session.selections[role]&&!shared}>{tr('Aucune · compléter plus tard','None · complete later')}</option>
+              <div class="resource-select"><label><span class="sr-only">{tr('Ressource','Resource')}</span><select class="input" value={previewToken} onchange={e=>flow.preview(role,e.currentTarget.value)} aria-label={tr('Examiner : ','Inspect: ')+roleLabel(role)}>
+                <option value="" >{tr('Aucun aperçu','No preview')}</option>
                 {#each s.candidates.filter(c=>c.role===role) as candidate}<option value={candidate.token} disabled={!!candidate.warning}>{candidate.name} · {candidate.storage==='staged'?tr('Fourni','Provided'):candidate.storage==='managed'?tr('Géré','Managed'):'KiCad'}</option>{/each}
               </select></label>{#if !shared}<button class="btn quiet" aria-label={tr('Recherche locale : ','Local search: ')+roleLabel(role)} aria-expanded={!!searchOpen[role]} onclick={()=>searchOpen[role]=!searchOpen[role]}><Search size={14}/></button>{/if}</div>
+              {#if proposed}<span class="small secondary">{matchLabel(proposed.match)} · {proposed.storage==='staged'?tr('Fichier fourni','Provided file'):reasonLabel(proposed.reason)}{#if proposed.source} · {proposed.source}{/if}{#if proposed.package} · {proposed.package}{/if}</span>
+              <span class="small">{selected?.token===proposed.token?tr('Retenue pour l’enregistrement','Selected for saving'):tr('Proposition non retenue','Suggestion not selected')}</span>
+              {#if !shared && selected?.token!==proposed.token}<button class="btn" disabled={!!proposed.warning||s.discovering} onclick={()=>flow.choose(role,proposed.token)}>{tr('Retenir cette ressource','Select this resource')}</button>{/if}{/if}
+              {#if selected && selected.token!==proposed?.token}<span class="small">{tr('Choix conservé : ','Selection kept: ')}{selected.name}</span>{/if}
+              {#if selected && !shared && !s.session.selections[role]}<button class="btn quiet" onclick={()=>flow.choose(role,'')}>{tr('Retirer du choix','Clear selection')}</button>{/if}
               {#if shared}<span class="small secondary">{tr('Choix du package partagé','Shared package selection')}</span>
               {:else if searchOpen[role]}<div class="resource-search"><input class="input" aria-label={tr('Recherche locale : ','Local search: ')+roleLabel(role)} placeholder={tr('Rechercher localement…','Search locally…')} bind:value={queries[role]} onkeydown={e=>{if(e.key==='Enter'){e.preventDefault();void flow.search(role,queries[role]||'');}}}/><button class="btn quiet" disabled={s.searching.includes(role)} aria-label={tr('Rechercher : ','Search: ')+roleLabel(role)} onclick={()=>flow.search(role,queries[role]||'')}><Search size={14}/></button></div>{/if}
             </div>
-            {#if selected}{#key selected.token}<AssetPreview {role} prepared={{preparation:s.session.preparation,token:selected.token}}/>{/key}
-            {:else}<div class="empty-preview"><Icon size={26}/><span>{tr('Aucune ressource sélectionnée','No resource selected')}</span></div>{/if}
+            {#if proposed}{#key proposed.token}<AssetPreview {role} prepared={{preparation:s.session.preparation,token:proposed.token}}/>{/key}
+            {:else}<div class="empty-preview"><Icon size={26}/><span>{s.discovering?tr('Recherche en cours…','Searching…'):tr('Aucune proposition · import manuel disponible à la première étape','No suggestion · manual import is available in the first step')}</span></div>{/if}
           </section>
         {/each}
       </div>
       <p class="small secondary">{tr('L’import et l’aperçu ne constituent pas une validation électrique ou mécanique. Le composant reste un brouillon.','Importing and previewing are not electrical or mechanical validation. The component remains a draft.')}</p>
       {@render memberships()}
-      {#if s.notices.length}<Disclosure id="ingestion-search-notices" label={tr('État de la recherche locale','Local search status')}>{#each s.notices as notice}<p class="small secondary">{notice}</p>{/each}</Disclosure>{/if}
+      {#if s.notices.includes('INDEX_UNAVAILABLE')}<p class="small secondary" role="status">{tr('Index KiCad absent ou vide. Vous pouvez toujours importer vos fichiers à la première étape.','KiCad index missing or empty. You can still import your files in the first step.')}</p>{/if}
+      {#if s.notices.length}<Disclosure id="ingestion-search-notices" label={tr('État de la recherche locale','Local search status')}>{#each s.notices as notice}<p class="small secondary">{notice==='INDEX_UNAVAILABLE'?tr('Index KiCad absent ou vide. Les fichiers fournis et les assets gérés restent disponibles ; configurez les racines et reconstruisez l’index local.','KiCad index missing or empty. Provided files and managed assets remain available; configure roots and rebuild the local index.'):notice}</p>{/each}</Disclosure>{/if}
     {/if}
     {#if s.step>0 && s.duplicates.length}
       <div class="duplicate"><h3>{tr('Composant déjà présent','Existing component')}</h3>
@@ -120,10 +139,10 @@ async function packageChanged(value:string){flow.edit({package_id:value,package_
   <footer class="flow-footer">
     <button class="btn" disabled={s.busy||s.recovery} onclick={cancel}>{tr('Annuler l’ajout','Cancel addition')}</button>
     <span class="secondary small">{personal?tr('Enregistrement local','Local save'):tr('Sauvegarde locale · sandbox','Local save · sandbox')}</span><div class="grow"></div>
-    {#if s.step<2}<button class="btn primary" disabled={s.busy||!s.session||s.recovery} onclick={()=>flow.next()}>{tr('Continuer','Continue')}<ArrowRight size={14}/></button>
+    {#if s.step<2}<button class="btn" class:primary={s.step===0} disabled={s.busy||s.discovering||!s.session||s.recovery} onclick={()=>flow.next()}>{tr('Continuer','Continue')}<ArrowRight size={14}/></button>
     {:else}
-      {#if incomplete}<button class="btn" disabled={s.busy||s.recovery||!!s.duplicates.length&&!s.variant} onclick={()=>flow.commit(s.variant?'variant':'save')}>{tr('Enregistrer comme brouillon','Save as draft')}</button>{/if}
-      <button class="btn primary" disabled={s.busy||s.recovery||!!s.duplicates.length&&!s.variant} onclick={()=>flow.commit(s.variant?'variant':'save')}><Check size={14}/>{tr('Enregistrer dans FabParts','Save in FabParts')}</button>
+      {#if incomplete}<button class="btn" disabled={s.busy||s.discovering||s.recovery||!!s.duplicates.length&&!s.variant} onclick={()=>flow.commit(s.variant?'variant':'save')}>{tr('Enregistrer comme brouillon','Save as draft')}</button>{/if}
+      <button class="btn primary" disabled={s.busy||s.discovering||s.recovery||!!s.duplicates.length&&!s.variant} onclick={()=>flow.commit(s.variant?'variant':'save')}><Check size={14}/>{tr('Enregistrer dans FabParts','Save in FabParts')}</button>
     {/if}
   </footer>
 </section>
@@ -152,7 +171,7 @@ h3{font-size:var(--fs-xs);letter-spacing:.06em;text-transform:uppercase;color:va
 .flow-footer{flex-wrap:wrap;display:flex;gap:12px;align-items:center;padding:12px 16px;border-top:1px solid var(--border);background:var(--bg-panel)}.grow{flex:1}
 .notice{display:flex;align-items:center;gap:12px;border-left:2px solid var(--info);padding:12px;margin-top:16px;color:var(--info);font-size:var(--fs-sm)}.error{color:var(--danger-text);border-color:var(--danger)}
 .duplicate{border-top:1px solid var(--border);padding-top:16px;margin-top:16px}.duplicate-row{display:flex;flex-direction:column;gap:8px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}
-.resources-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3)}.resource{--asset-preview-height:96px;min-width:0;border:1px solid var(--border);background:var(--bg-panel)}
+.resources-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3)}.resource{min-width:0;border:1px solid var(--border);background:var(--bg-panel)}
 .resource header{min-height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--s3);border-bottom:1px solid var(--divider);gap:8px;flex-wrap:wrap}
 .resource header span{display:flex;align-items:center;gap:8px;font-size:var(--fs-sm)}.resource-choice{padding:8px;display:flex;flex-direction:column;gap:6px}.resource-search{display:flex;gap:4px}.resource-select{display:flex;align-items:center;gap:4px}.resource-select label{flex:1;min-width:0}.resource-select select{height:28px;padding:2px 6px}
 .empty-preview{min-height:174px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--text-secondary);font-size:var(--fs-sm);background:var(--bg-workspace)}

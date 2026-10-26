@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 from kipartmanager.application.asset_imports import AssetImports
 from kipartmanager.application.asset_previews import AssetPreviews
 from kipartmanager.application.catalogue import Catalogue
+from kipartmanager.application.discovery import LocalDiscovery
 from kipartmanager.application.kicad import KiCadLibraries
 from kipartmanager.application.resolver import LocalResolver
 from kipartmanager.domain.documentation import (
@@ -32,6 +33,7 @@ from kipartmanager.domain.entities import (
 )
 from kipartmanager.domain.resolution import Candidate, CandidateTier, ResourceChoice
 from kipartmanager.ports.asset_store import AssetStore
+from kipartmanager.ports.discovery import DiscoveryProbe
 from kipartmanager.ports.documentation import DocumentationRepository
 from kipartmanager.ports.ingestion import IngestionTransaction, IngestionTransactions, Receipt
 from kipartmanager.ports.prepared_files import PreparedFile, PreparedFiles
@@ -115,6 +117,9 @@ class IngestionPreparation:
     keys: dict[str, str] = field(default_factory=dict)
     pdf_handles: list[str] = field(default_factory=list)
     model_handles: list[str] = field(default_factory=list)
+    metadata: dict[str, MetadataProposal] = field(default_factory=dict)
+    discovered: dict[str, list[Candidate]] = field(default_factory=dict)
+    discovery_fields: IngestionFields | None = None
 
 
 class Ingestion:
@@ -128,10 +133,12 @@ class Ingestion:
         files: PreparedFiles,
         previews: AssetPreviews,
         libraries: KiCadLibraries | None = None,
+        probe: DiscoveryProbe | None = None,
     ) -> None:
         self.catalogue, self.documentation, self.resolver = catalogue, documentation, resolver
         self.transactions, self.store, self.files = transactions, store, files
         self.previews, self.libraries = previews, libraries
+        self.discovery = LocalDiscovery(catalogue, documentation, resolver, probe)
         self.preparation: IngestionPreparation | None = None
 
     @staticmethod
@@ -290,6 +297,90 @@ class Ingestion:
             )
         return {"candidates": [c.dto() for c in values], "notices": result.notices}
 
+    def discover(self, preparation: str, fields: IngestionFields, role: str) -> dict[str, Any]:
+        prep = self._preparation(preparation)
+        if not (fields.reference.strip() or fields.mpn.strip()):
+            raise DomainError("Saisir une référence ou un MPN pour rechercher.")
+        if role == "SYMBOL":
+            prep.discovered = {}
+            prep.discovery_fields = fields
+        elif prep.discovery_fields != fields:
+            raise ConflictError("Identification modifiée ; relancer la recherche guidée.")
+        suggestions, parts, notices = self.discovery.search(
+            AssetType(role), fields.reference, fields.mpn, fields.package_name, prep.discovered
+        )
+        prep.discovered[role] = [s.candidate for s in suggestions]
+        # Supplied files remain visible alongside suggestions, never silently replaced.
+        supplied = self.search(preparation, role, fields.mpn or fields.reference)
+        values = {c["token"]: c for c in supplied["candidates"] if c["storage"] == "staged"}
+        for suggestion in suggestions:
+            candidate = suggestion.candidate
+            pending = self._candidate(
+                prep,
+                candidate.choice.key,
+                PendingCandidate(
+                    secrets.token_hex(24),
+                    AssetType(role),
+                    candidate.name,
+                    candidate=candidate,
+                ),
+            )
+            values[pending.token] = {
+                **pending.dto(),
+                "match": suggestion.match,
+                "reason": suggestion.reason,
+                "source": suggestion.source,
+                "package": suggestion.package,
+            }
+        metadata = []
+        packages = {}
+        for part in parts:
+            identity = self.documentation.identification(part.id)
+            source = MetadataSource(
+                ("Catalogue FabParts · " + part.name)[:2048],
+                f"fabparts:part:{part.id}:identification:{identity.revision}",
+            )
+            for item in identity.values:
+                if item.field not in {
+                    MetadataField.MPN,
+                    MetadataField.MANUFACTURER,
+                    MetadataField.CATEGORY,
+                }:
+                    continue
+                if not item.value.strip() or len(item.value) > 2048:
+                    continue
+                proposal = MetadataProposal(source, (FieldValue(item.field, item.value.strip()),))
+                token = next((k for k, v in prep.metadata.items() if v == proposal), "")
+                if not token:
+                    if len(prep.metadata) >= 128:
+                        raise DomainError("Trop de propositions ; recommencer l’ajout.")
+                    token = secrets.token_hex(24)
+                    prep.metadata[token] = proposal
+                metadata.append(
+                    {
+                        "token": token,
+                        "field": item.field.value,
+                        "value": item.value.strip(),
+                        "source": source.label,
+                        "reference": source.reference,
+                    }
+                )
+            if part.package_id:
+                package = self.catalogue.require(Package, part.package_id)
+                packages[str(package.id)] = {
+                    "id": str(package.id),
+                    "name": package.name,
+                    "source": part.name,
+                }
+        return {
+            "candidates": list(values.values()),
+            "metadata": metadata,
+            "packages": list(packages.values()),
+            "similar": [{"id": str(p.id), "name": p.name} for p in parts],
+            "notices": list(dict.fromkeys(notices)),
+            "role": role,
+        }
+
     def duplicates(
         self,
         fields: IngestionFields,
@@ -391,6 +482,7 @@ class Ingestion:
         selections: dict[str, str],
         action: str = "save",
         existing_id: str = "",
+        metadata: dict[str, str] | None = None,
     ) -> dict[str, str]:
         fields.validate()
         if action not in {"save", "variant", "membership"}:
@@ -403,6 +495,7 @@ class Ingestion:
                     "action": action,
                     "existing_id": existing_id,
                     "preparation": preparation,
+                    **({"metadata": metadata} if metadata else {}),
                 },
                 sort_keys=True,
             ).encode()
@@ -454,7 +547,7 @@ class Ingestion:
                     )
                 ):
                     raise DomainError("Une variante nécessite une référence distincte explicite.")
-                part = self._save(prep, fields, pending, transaction, cat)
+                part = self._save(prep, fields, pending, transaction, cat, metadata or {})
             for collection_id in fields.collections:
                 collection = cat.require(Collection, UUID(collection_id))
                 cat.save(
@@ -489,7 +582,17 @@ class Ingestion:
         pending: list[PendingCandidate],
         transaction: IngestionTransaction,
         cat: Catalogue,
+        metadata: dict[str, str],
     ) -> Part:
+        for key, token in metadata.items():
+            proposal = prep.metadata.get(token)
+            if (
+                proposal is None
+                or key not in {"mpn", "manufacturer", "category"}
+                or proposal.values[0].field.value != key
+                or proposal.values[0].value != getattr(fields, key).strip()
+            ):
+                raise ConflictError("Proposition modifiée ou hors préparation ; la relire.")
         package = cat.require(Package, UUID(fields.package_id)) if fields.package_id else None
         if fields.package_name.strip():
             if any(
@@ -567,17 +670,26 @@ class Ingestion:
             )
             if identity.value(f) != v.strip()
         )
-        if values:
-            proposal = MetadataProposal(
-                MetadataSource("Saisie utilisateur", "FabParts local ingestion"), values
-            )
+        manual = tuple(v for v in values if v.field.value not in metadata)
+        proposals = (
+            [
+                MetadataProposal(
+                    MetadataSource("Saisie utilisateur", "FabParts local ingestion"), manual
+                )
+            ]
+            if manual
+            else []
+        ) + [prep.metadata[metadata[v.field.value]] for v in values if v.field.value in metadata]
+        for proposal in proposals:
             updated = identity.accept(
                 proposal,
-                tuple(v.field for v in values),
+                tuple(v.field for v in proposal.values),
                 replace_existing=True,
                 recorded_at=datetime.now(UTC).isoformat(),
             )
             transaction.documentation.save_identification(updated, identity)
+            identity = updated
+
         return cat.require(Part, part.id)
 
     def result(self, operation_id: str) -> dict[str, str]:

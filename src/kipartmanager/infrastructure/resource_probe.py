@@ -160,6 +160,34 @@ class LocalResourceProbe:
         except (DomainError, OSError, UnicodeError) as error:
             return Inspection(reference.asset_type, error=str(error))
 
+    def model_links(
+        self, file: AssetFile | None, reference: KiCadReference | None
+    ) -> tuple[str, ...]:
+        # Additional discovery information, deliberately outside M5 fingerprints.
+        if file and file.asset_type is AssetType.FOOTPRINT:
+            self.store.verify(file)
+            path = self.store._path(file)
+        elif reference and reference.asset_type is AssetType.FOOTPRINT:
+            self.index.verify_reference(reference)
+            path = Path(self.index.configuration().footprints) / reference.relative_path
+        else:
+            return ()
+        if path.stat().st_size > 64 * 1024 * 1024:
+            raise DomainError("Empreinte trop grande.")
+        with path.open("rb") as stream:
+            raw = stream.read(64 * 1024 * 1024 + 1)
+        if len(raw) > 64 * 1024 * 1024:
+            raise DomainError("Empreinte trop grande.")
+        tree = parse(raw.decode("utf-8"))
+        footprint_info(tree)
+        links = tuple(n.atoms[1].replace("\\", "/") for n in tree.children_named("model"))
+        if file:
+            self.store.verify(file)
+        else:
+            assert reference is not None
+            self.index.verify_reference(reference)
+        return links
+
     @staticmethod
     def _inspect(
         path: Path, kind: AssetType, digest: str, selected: str, extension: str

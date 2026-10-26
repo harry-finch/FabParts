@@ -2,7 +2,9 @@ import type { Transport } from './controller';
 export const ingestionRoles = ['SYMBOL','FOOTPRINT','MODEL_3D','DATASHEET'] as const;
 export type Fields = { reference:string;mpn:string;manufacturer:string;description:string;category:string;package_id:string;package_name:string;collections:string[] };
 export const emptyFields = ():Fields => ({reference:'',mpn:'',manufacturer:'',description:'',category:'',package_id:'',package_name:'',collections:[]});
-export type Candidate = {token:string;role:string;name:string;origin:string;storage:string;sha256:string;warning:string;validation_state:string};
+export type MetadataSuggestion={token:string;field:"mpn"|"manufacturer"|"category";value:string;source:string;reference:string};
+export type GuidedResult={candidates:Candidate[];metadata:MetadataSuggestion[];packages:{id:string;name:string;source:string}[];similar:{id:string;name:string}[];notices:string[]};
+export type Candidate = {match?:string;reason?:string;source?:string;package?:string;token:string;role:string;name:string;origin:string;storage:string;sha256:string;warning:string;validation_state:string};
 export type FileItem = {handle:string;file:{original_name:string;extension:string;sha256:string;size_bytes:number};symbols:string[]};
 export type Duplicate = {id:string;name:string;mpn:string;manufacturer:string};
 export type Preparation = {preparation:string;operation_id:string;part_id:string;fields:Fields;selections:Record<string,string>;candidates:Candidate[];collections:{id:string;name:string}[];packages:{id:string;name:string}[];categories:string[]};
@@ -15,13 +17,14 @@ export const browserRecovery:RecoveryStore = {
 };
 export const business = <T>(invoke:Transport, method:string, params:Record<string,unknown>):Promise<T> =>
   invoke<T>('ingestion_command',{request:{method,params}});
-export type IngestionState = {session:Preparation|null;fields:Fields;selections:Record<string,string>;candidates:Candidate[];files:FileItem[];duplicates:Duplicate[];notices:string[];busy:boolean;error:string;recovery:boolean;step:number;variant:boolean;searching:string[]};
-export const initialIngestion = ():IngestionState => ({session:null,fields:emptyFields(),selections:{},candidates:[],files:[],duplicates:[],notices:[],busy:false,error:'',recovery:false,step:0,variant:false,searching:[]});
+export type IngestionState = {session:Preparation|null;fields:Fields;selections:Record<string,string>;candidates:Candidate[];files:FileItem[];duplicates:Duplicate[];notices:string[];busy:boolean;error:string;recovery:boolean;step:number;variant:boolean;searching:string[];discovering:boolean;discovered:boolean;metadata:MetadataSuggestion[];acceptedMetadata:Record<string,string>;proposedPackages:GuidedResult["packages"];similar:GuidedResult["similar"];previewing:Record<string,string>};
+export const initialIngestion = ():IngestionState => ({session:null,fields:emptyFields(),selections:{},candidates:[],files:[],duplicates:[],notices:[],busy:false,error:'',recovery:false,step:0,variant:false,searching:[],discovering:false,discovered:false,metadata:[],acceptedMetadata:{},proposedPackages:[],similar:[],previewing:{}});
 
 // Presentation state only. Identity, ownership and persistence are decided by Python.
 export class IngestionController {
   state=initialIngestion();
   private epoch=0;
+  private discoveryEpoch=0;
   private searches:Record<string,number>={};
   private invoke:Transport;
   private changed:(state:IngestionState)=>void;
@@ -35,13 +38,44 @@ export class IngestionController {
   private error(error:unknown) {return (error as {message?:string})?.message || String(error);}
   private merge(candidates:Candidate[]) {
     const map=new Map(this.state.candidates.map(c=>[c.token,c]));
-    for(const c of candidates)map.set(c.token,c);
+    for(const c of candidates)map.set(c.token,{...map.get(c.token),...c});
     return [...map.values()];
   }
-  edit(patch:Partial<Fields>) {this.emit({fields:{...this.state.fields,...patch},error:''});}
+  edit(patch:Partial<Fields>) {
+    this.discoveryEpoch++;
+    const acceptedMetadata={...this.state.acceptedMetadata};
+    for(const key of Object.keys(patch))delete acceptedMetadata[key];
+    const identityChanged=['reference','mpn','manufacturer'].some(k=>k in patch && patch[k as keyof Fields]!==this.state.fields[k as keyof Fields]);
+    this.emit({fields:{...this.state.fields,...patch},acceptedMetadata,error:'',discovered:false,discovering:false,
+      ...(identityChanged?{metadata:[],proposedPackages:[],similar:[],previewing:{},candidates:this.state.candidates.filter(c=>c.storage==='staged'||this.state.selections[c.role]===c.token)}:{})});
+  }
+  preview(role:string,token:string) {this.emit({previewing:{...this.state.previewing,[role]:token}});}
+  acceptMetadata(item:MetadataSuggestion) {
+    if(this.state.discovering||!this.state.metadata.some(m=>m.token===item.token))return;
+    this.emit({fields:{...this.state.fields,[item.field]:item.value},acceptedMetadata:{...this.state.acceptedMetadata,[item.field]:item.token}});
+    void this.inspect();
+  }
+  async discover() {
+    if(!this.state.session||this.state.busy||this.state.discovering)return;
+    const fields=this.state.fields, epoch=this.epoch, discovery=++this.discoveryEpoch;
+    if(!(fields.reference.trim()||fields.mpn.trim())){this.emit({error:'identity_required'});return;}
+    this.emit({discovering:true,discovered:false,error:'',step:2,notices:[]});
+    try {
+      await this.inspect();
+      for(const role of ingestionRoles) {
+        if(epoch!==this.epoch||discovery!==this.discoveryEpoch)return;
+        const result=await business<GuidedResult>(this.invoke,'ingestion_discover',{preparation:this.state.session.preparation,fields,role});
+        if(epoch!==this.epoch||discovery!==this.discoveryEpoch)return;
+        const kept=this.state.candidates.filter(c=>c.role!==role||c.token===this.state.selections[role]||c.storage==='staged');
+        this.emit({candidates:[...new Map([...kept,...result.candidates].map(c=>[c.token,c])).values()],metadata:result.metadata,proposedPackages:result.packages,similar:result.similar,notices:[...new Set([...this.state.notices,...result.notices])]});
+      }
+      this.emit({discovered:true});
+    }catch(error){if(epoch===this.epoch&&discovery===this.discoveryEpoch)this.emit({error:this.error(error)});}
+    finally{if(epoch===this.epoch&&discovery===this.discoveryEpoch)this.emit({discovering:false});}
+  }
   choose(role:string,token:string) {
     const selections={...this.state.selections};if(token)selections[role]=token;else delete selections[role];
-    this.emit({selections,error:''});
+    this.emit({selections,previewing:{...this.state.previewing,[role]:token},error:''});
   }
   variant(value:boolean) {this.emit({variant:value});}
   async begin(partId='',library='all') {
@@ -102,20 +136,20 @@ export class IngestionController {
     }catch(error){if(epoch===this.epoch)this.emit({error:this.error(error)});return false;}
   }
   async next() {
-    if(this.state.busy||!this.state.session)return;
+    if(this.state.busy||this.state.discovering||!this.state.session)return;
     if(!this.state.fields.reference.trim()&&!this.state.fields.mpn.trim()){this.emit({error:'identity_required'});return;}
     if(!this.state.fields.collections.length){this.emit({error:'library_required'});return;}
     this.emit({busy:true,error:''});
     if(await this.inspect()){
       const next=Math.min(2,this.state.step+1);
-      if(next===2)for(const role of ingestionRoles)await this.search(role);
+      if(next===2&&!this.state.discovered)for(const role of ingestionRoles)await this.search(role,(this.state.fields.mpn||this.state.fields.reference).slice(0,255));
       this.emit({step:next});
     }
     this.emit({busy:false});
   }
   back(step:number) {if(!this.state.busy)this.emit({step,error:''});}
   async commit(action:'save'|'variant'|'membership'='save', existingId='') {
-    const session=this.state.session;if(!session||this.state.busy||this.state.recovery)return;
+    const session=this.state.session;if(!session||this.state.busy||this.state.discovering||this.state.recovery)return;
     if(!this.state.fields.reference.trim()&&!this.state.fields.mpn.trim()){this.emit({error:'identity_required'});return;}
     if(!this.state.fields.collections.length){this.emit({error:'library_required'});return;}
     const epoch=this.epoch;this.emit({busy:true,error:''});
@@ -123,7 +157,7 @@ export class IngestionController {
       this.recoveryStore.set(session.operation_id);
       const result=await business<Confirmation>(this.invoke,'ingestion_commit',{
         preparation:session.preparation,operation_id:session.operation_id,
-        fields:this.state.fields,selections:this.state.selections,action,existing_id:existingId,
+        fields:this.state.fields,selections:this.state.selections,metadata:this.state.acceptedMetadata,action,existing_id:existingId,
       });
       if(epoch!==this.epoch)return;
       if(result.status!=='saved'||!result.part_id)throw Error('confirmation_missing');

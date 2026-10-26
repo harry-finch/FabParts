@@ -647,3 +647,20 @@ L'échange/exclusivité atomique conserve les inodes concurrents. Les miroirs et
 copies vivent sous config, déjà inclus dans TECH-04A ; une restauration laisse les
 tables externes intactes et exige une réconciliation. Voir
 [TECH-05B](FABPARTS_2_TECH_05B.md) pour les formats, preuves et limites de plateforme.
+
+### TECH-06A — Recherche locale guidée
+
+`LocalDiscovery` orchestre le catalogue, les profils M10, `LocalResolver` et
+`KiCadLibraries`, sans adaptateur réseau/IA. `Ingestion` transforme les suggestions
+en capacités limitées à sa préparation ; les réponses progressent par rôle. Les
+liens symbole → empreinte utilisent la propriété héritée et les numéros pins/pads ;
+les liens 3D exigent le chemin relatif exact déclaré sous KICAD*_3DMODEL_DIR, pas
+une égalité de basename. `DiscoveryProbe` étend les lectures existantes de
+`LocalResourceProbe` sans changer les snapshots Inspection ni les empreintes M5.
+
+Aucune recherche n'écrit le catalogue. Les profils connus deviennent des
+MetadataProposal éphémères ; au commit, seules les capacités explicitement retenues
+et dont la valeur concorde sont acceptées via Identification.accept et le dépôt
+transactionnel existants. La provenance renvoie au Part source et à sa révision.
+La saisie manuelle garde sa provenance utilisateur. Pas de migration, stockage
+parallèle ni changement M6-1/M7/TECH-05B. Voir [TECH-06A](FABPARTS_2_TECH_06A.md).
