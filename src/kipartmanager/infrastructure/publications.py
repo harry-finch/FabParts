@@ -328,6 +328,26 @@ class LocalPublications:
                 ) from error
         return tuple(result)
 
+    def occupied_versions(self, collection_id: UUID) -> tuple[int, ...]:
+        # Include incomplete reservations; a missing COMMIT never frees a number.
+        parent = safe_file(self.root, str(collection_id))
+        return tuple(
+            sorted(
+                int(p.name[1:])
+                for p in parent.glob("v[0-9][0-9][0-9][0-9][0-9][0-9]")
+                if 1 <= int(p.name[1:]) <= 999999
+            )
+        )
+
+    def details(self, publication: Publication) -> tuple[BuildPlan, str, bool, tuple[str, ...]]:
+        _, data, plan = self._load(publication)
+        return (
+            plan,
+            data["validation"]["level"],
+            data["validation"]["warnings_accepted"],
+            tuple(e["path"] for e in data["artifacts"]),
+        )
+
     def _sources(
         self, root: Path, data: dict[str, Any], plan: BuildPlan
     ) -> dict[str, tuple[Path, str, str, str]]:

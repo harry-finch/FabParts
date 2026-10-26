@@ -617,3 +617,18 @@ lie les décisions aux rapports réellement retournés dans la session. Il ne pa
 aucun asset, ne change ni les règles M5 ni les états métier et n'introduit aucune
 persistance parallèle. Les rapports existants restent inclus dans les snapshots
 SQLite TECH-04A. Voir [TECH-04B](FABPARTS_2_TECH_04B.md).
+
+### TECH-05A — Pont de publications M6/M7
+
+La composition headless réutilise LocalPublisher, LocalLibraryBuilder, Publications
+et LocalPublications. PublicationReview fournit des DTO paginés et une capacité
+éphémère liée au résumé exact (plan, rapport, collection, version). Les ajouts au port
+PublicationStore exposent seulement les numéros occupés et les détails du plan figé ;
+ni format M7 ni schéma SQLite ne changent. Les opérations historiques gardent leur
+indépendance du catalogue courant.
+
+Le host n’accepte pas de destination ni de manifest depuis la WebView. Les mutations
+sont bloquées en readonly, pendant ingestion et après restauration avant redémarrage.
+La récupération consulte l’engagement filesystem M7 ; le journal de demande UI ne
+fait jamais autorité sur une publication. Son périmètre est lié par hash au dossier
+de données effectif. Les sauvegardes TECH-04A incluent déjà l’historique et ses inputs.
