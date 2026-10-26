@@ -18,7 +18,7 @@ def create_database_engine(path: Path) -> Engine:
 
 
 def migrate(engine: Engine, revision: str = "head", *, downgrade: bool = False) -> None:
-    # The packaged sidecar never migrates. Keep Alembic in explicit administration only.
+    # Only controlled personal-workspace initialization/upgrades and administration migrate.
     from alembic import command
     from alembic.config import Config
 

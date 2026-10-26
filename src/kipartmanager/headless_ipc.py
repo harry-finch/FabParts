@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, BinaryIO
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from kipartmanager.application.catalogue_reader import CatalogueReader
 from kipartmanager.application.ingestion import Ingestion
 from kipartmanager.domain.entities import DomainError, PartState
 from kipartmanager.infrastructure.readonly_catalogue import SCHEMA
+from kipartmanager.infrastructure.user_workspace import UserWorkspace
 from kipartmanager.ingestion_ipc import FIELDS as INGESTION_METHODS
 from kipartmanager.ingestion_ipc import dispatch
 from kipartmanager.ingestion_ipc import validate as validate_ingestion
@@ -111,6 +113,7 @@ def respond(
     previews: AssetPreviews | None = None,
     ingestion: Ingestion | None = None,
     schema: str = SCHEMA,
+    workspace: UserWorkspace | None = None,
 ) -> dict[str, Any]:
     identity = None
     try:
@@ -133,7 +136,39 @@ def respond(
         method = request["method"]
         if not isinstance(method, str):
             raise ProtocolError("INVALID_REQUEST", "Nom de commande requis.")
+        if method.startswith("workspace_"):
+            if workspace is None:
+                raise ProtocolError("READ_ONLY", "Personal workspace required")
+            if ingestion is not None and ingestion.preparation is not None:
+                raise ProtocolError("BUSY", "Finish the active preparation first")
+            fields = {
+                "workspace_info": set(),
+                "workspace_backup": set(),
+                "workspace_verify": {"path"},
+                "workspace_restore": {"handle"},
+            }
+            params = request["params"]
+            if (
+                method not in fields
+                or not isinstance(params, dict)
+                or set(params) != fields[method]
+                or any(
+                    not isinstance(v, str) or not v or len(v) > 4096 or "\x00" in v
+                    for v in params.values()
+                )
+            ):
+                raise ProtocolError("INVALID_PARAMS", "Invalid workspace command")
+            operations = {
+                "workspace_info": lambda: workspace.info(),
+                "workspace_backup": lambda: workspace.backup(),
+                "workspace_verify": lambda: workspace.verify(Path(params["path"])),
+                "workspace_restore": lambda: workspace.restore(params["handle"]),
+            }
+            result: object = operations[method]()
+            return {"protocol_version": 1, "request_id": identity, "ok": True, "result": result}
         if method in INGESTION_METHODS:
+            if workspace is not None and workspace.requires_restart:
+                raise ProtocolError("READ_ONLY", "Restart required after restore")
             if ingestion is None:
                 raise ProtocolError("READ_ONLY", "Cette session est ouverte en lecture seule.")
             try:
@@ -150,7 +185,12 @@ def respond(
                 "protocol_version": 1,
                 "catalogue_available": True,
                 "schema": schema,
-                "read_only": ingestion is None,
+                "read_only": ingestion is None or bool(workspace and workspace.requires_restart),
+                "workspace_mode": "personal"
+                if workspace
+                else "sandbox"
+                if ingestion
+                else "readonly",
                 "qt_loaded": any(k.startswith("PySide6") for k in sys.modules),
                 "pid": os.getpid(),
             },
@@ -198,6 +238,7 @@ def serve(
     previews: AssetPreviews | None = None,
     ingestion: Ingestion | None = None,
     schema: str = SCHEMA,
+    workspace: UserWorkspace | None = None,
 ) -> None:
     while raw := source.readline(MAX_REQUEST + 1):
         if len(raw) > MAX_REQUEST:
@@ -208,7 +249,7 @@ def serve(
         if not raw.endswith(b"\n"):
             response = error_response(None, "INVALID_REQUEST", "Message JSONL incomplet.")
         else:
-            response = respond(raw, reader, previews, ingestion, schema)
+            response = respond(raw, reader, previews, ingestion, schema, workspace)
         encoded = json.dumps(response, ensure_ascii=False, allow_nan=False).encode()
         if len(encoded) > MAX_RESPONSE:
             encoded = json.dumps(

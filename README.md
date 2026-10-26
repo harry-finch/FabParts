@@ -135,3 +135,18 @@ FabParts is intended to be part of FabApps, a family of practical desktop tools 
 ## Repository history
 
 This public repository starts from an intentionally curated snapshot. Earlier internal development history, checkpoint reports and unapproved screenshots are retained privately; this first commit does not reconstruct the original milestone history. Future development branches start from this public `main`.
+
+### Espace personnel (TECH-04A)
+
+Le lancement normal de l'application native ne nécessite aucune variable
+d'environnement. Sur macOS, les nouvelles données résident sous
+`~/Library/Application Support/FabParts`, indépendamment de KiPart Manager.
+Paramètres et données permet de sauvegarder, vérifier et restaurer les données
+vers une nouvelle génération, puis de redémarrer le moteur.
+
+Les modes explicites `--data-dir` readonly et `FABPARTS_SANDBOX_DIR` restent
+réservés aux copies contrôlées et au développement. Pour la qualification native
+sur des données jetables uniquement, le host accepte `FABPARTS_USER_DATA_DIR` ;
+ce chemin n'est jamais fourni par la WebView. Les sauvegardes et générations
+précédentes ne sont pas purgées automatiquement. Voir le
+[rapport TECH-04A](docs/FABPARTS_2_TECH_04A.md).

@@ -3,6 +3,7 @@ mod diagnostics;
 mod ingestion;
 mod ipc;
 mod previews;
+mod workspace;
 
 use ipc::{Failure, Reply, STARTUP_TIMEOUT, TIMEOUT};
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,7 @@ struct Session {
     preparation: Option<String>,
     prepared_pdf: std::collections::VecDeque<String>,
     prepared_models: std::collections::VecDeque<String>,
+    restore_handle: Option<String>,
 }
 impl Session {
     async fn call(
@@ -124,15 +126,19 @@ impl Drop for Session {
 struct Engine {
     data_dir: Mutex<Option<PathBuf>>,
     sandbox_dir: Option<PathBuf>,
+    personal: bool,
     picking: Mutex<()>,
     session: Mutex<Option<Session>>,
     closing: watch::Sender<bool>,
 }
 impl Engine {
+    fn writable(&self) -> bool {
+        self.personal || self.sandbox_dir.is_some()
+    }
     async fn authorize_preparation(&self, preparation: &str) -> Result<(), Failure> {
         let guard = self.session.lock().await;
         ingestion::authorize(
-            self.sandbox_dir.is_some(),
+            self.writable(),
             guard.as_ref().and_then(|s| s.preparation.as_deref()),
             "ingestion_file_start",
             &json!({"preparation":preparation}),
@@ -145,9 +151,24 @@ impl Engine {
                 .map_err(|_| Failure::new("BUSY", "Le moteur est occupé."))
         })
         .await?;
+        if method.starts_with("workspace_") {
+            if !self.personal {
+                return Err(Failure::new("READ_ONLY", "Personal workspace required"));
+            }
+            if guard.as_ref().is_some_and(|s| s.preparation.is_some()) {
+                return Err(Failure::new("BUSY", "Finish the current preparation first"));
+            }
+            if method == "workspace_restore"
+                && !guard
+                    .as_ref()
+                    .is_some_and(|s| s.restore_handle.as_deref() == params["handle"].as_str())
+            {
+                return Err(Failure::new("INVALID_PARAMS", "Backup capability required"));
+            }
+        }
         if method.starts_with("ingestion_") {
             ingestion::authorize(
-                self.sandbox_dir.is_some(),
+                self.writable(),
                 guard.as_ref().and_then(|s| s.preparation.as_deref()),
                 method,
                 &params,
@@ -185,7 +206,9 @@ impl Engine {
             .call(
                 method,
                 &params,
-                if method == "ingestion_commit" {
+                if method.starts_with("workspace_") {
+                    Duration::from_secs(300)
+                } else if method == "ingestion_commit" {
                     STARTUP_TIMEOUT
                 } else {
                     TIMEOUT
@@ -257,6 +280,12 @@ impl Engine {
             }
         }
         if let (Ok(value), Some(session)) = (&result, guard.as_mut()) {
+            if method == "workspace_verify" {
+                session.restore_handle = value["handle"].as_str().map(str::to_owned);
+            }
+            if method == "workspace_restore" {
+                session.restore_handle = None;
+            }
             if (method == "ingestion_begin")
                 || (method == "ingestion_cancel" && value["cancelled"] == true)
                 || (method == "ingestion_commit" && value["status"] == "saved")
@@ -385,7 +414,7 @@ async fn restart_session(
     engine: &Engine,
     data_dir: Option<String>,
 ) -> Reply {
-    if engine.sandbox_dir.is_some() && data_dir.is_some() {
+    if engine.writable() && data_dir.is_some() {
         return Err(Failure::new(
             "READ_ONLY",
             "Le dossier writable est fixé par l’hôte au lancement.",
@@ -417,31 +446,27 @@ async fn restart_session(
         }
         *configured = Some(PathBuf::from(path));
     }
-    let directory = configured.as_ref().ok_or_else(|| {
-        Failure::new(
-            "DATA_DIR_REQUIRED",
-            "Lancez TECH-01 avec --data-dir et une copie contrôlée du catalogue.",
-        )
-    })?;
-    if !directory.is_dir() {
+    let directory = configured.as_ref();
+    if !engine.personal && !directory.is_some_and(|p| p.is_dir()) {
         return Err(Failure::new(
-            if engine.sandbox_dir.is_some() {
-                "SANDBOX_UNAVAILABLE"
-            } else {
-                "INVALID_DATA_DIR"
-            },
-            "Le dossier de données est introuvable.",
+            "INVALID_DATA_DIR",
+            "A controlled data directory is required",
         ));
     }
     let mut command = app
         .shell()
         .sidecar("fabparts-engine")
         .map_err(|_| Failure::new("LAUNCH_FAILED", "Sidecar absent du paquet."))?
-        .args(["--data-dir".as_ref(), directory.as_os_str()])
         .env_clear()
         .env("TMPDIR", std::env::temp_dir())
         .set_raw_out(true)
         .set_process_group(true);
+    if let Some(path) = directory {
+        command = command.args(["--data-dir".as_ref(), path.as_os_str()]);
+    }
+    if engine.personal {
+        command = command.args(["--personal"]);
+    }
     if engine.sandbox_dir.is_some() {
         command = command.args(["--sandbox"]);
     }
@@ -466,26 +491,27 @@ async fn restart_session(
         preparation: None,
         prepared_pdf: Default::default(),
         prepared_models: Default::default(),
+        restore_handle: None,
     };
     let result = session
         .call(
             "health",
             &json!({}),
-            STARTUP_TIMEOUT,
+            if engine.personal { Duration::from_secs(300) } else { STARTUP_TIMEOUT },
             engine.closing.subscribe(),
         )
         .await
         .map_err(|error| {
             if error.code == "ENGINE_EXITED" {
                 Failure::new(
-                    if engine.sandbox_dir.is_some() { "SANDBOX_UNAVAILABLE" } else { "STARTUP_FAILED" },
+                    if engine.personal {"WORKSPACE_UNAVAILABLE"} else if engine.sandbox_dir.is_some() { "SANDBOX_UNAVAILABLE" } else { "STARTUP_FAILED" },
                     if engine.sandbox_dir.is_some() { "Sandbox inaccessible, déjà ouvert ou incompatible. Fermez l’autre session avant de réessayer." } else { "Le moteur n’a pas pu ouvrir la copie. Vérifiez son dossier et son schéma." },
                 )
             } else {
                 error
             }
         })?;
-    if result["read_only"].as_bool() != Some(engine.sandbox_dir.is_none()) {
+    if result["read_only"].as_bool() != Some(!engine.writable()) {
         return Err(Failure::new(
             "INVALID_RESPONSE",
             "Le mode du moteur ne correspond pas à celui de l’hôte.",
@@ -505,7 +531,14 @@ fn main() {
         _ => None,
     };
     let sandbox_dir = std::env::var_os("FABPARTS_SANDBOX_DIR").map(PathBuf::from);
-    let data_dir = sandbox_dir.clone().or(data_dir);
+    let personal = sandbox_dir.is_none() && data_dir.is_none();
+    // Host-only isolation for qualification; never supplied by JavaScript.
+    let personal_test = if personal {
+        std::env::var_os("FABPARTS_USER_DATA_DIR").map(PathBuf::from)
+    } else {
+        None
+    };
+    let data_dir = sandbox_dir.clone().or(data_dir).or(personal_test);
     let (closing, _) = watch::channel(false);
     diagnostics::event("app_started", json!({"state":"starting"}));
     let app = tauri::Builder::default()
@@ -514,12 +547,17 @@ fn main() {
         .manage(Engine {
             data_dir: Mutex::new(data_dir),
             sandbox_dir,
+            personal,
             picking: Mutex::new(()),
             session: Mutex::new(None),
             closing,
         })
         .setup(|app| {
-            if app.state::<Engine>().sandbox_dir.is_some() {
+            if app.state::<Engine>().personal {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_title("FabParts")?;
+                }
+            } else if app.state::<Engine>().sandbox_dir.is_some() {
                 if let Some(window) = app.get_webview_window("main") {
                     window.set_title("FabParts — TECH-03 · Sandbox")?;
                 }
@@ -539,7 +577,11 @@ fn main() {
             read_mesh_chunk,
             release_model_preview,
             ingestion::ingestion_command,
-            ingestion::choose_ingestion_files
+            ingestion::choose_ingestion_files,
+            workspace::workspace_info,
+            workspace::backup_workspace,
+            workspace::choose_workspace_backup,
+            workspace::restore_workspace
         ])
         .build(tauri::generate_context!())
         .expect("FabParts TECH-01 startup");
@@ -597,6 +639,54 @@ mod tests {
         }
     }
 
+    #[test]
+    fn personal_workspace_capabilities_and_busy_preparation_are_host_gated() {
+        tauri::async_runtime::block_on(async {
+            let (closing, _) = watch::channel(false);
+            let engine = Engine {
+                data_dir: Mutex::new(None),
+                sandbox_dir: None,
+                personal: true,
+                picking: Mutex::new(()),
+                session: Mutex::new(Some(empty_session())),
+                closing,
+            };
+            assert!(engine.writable());
+            let handle = "a".repeat(48);
+            assert_eq!(
+                engine
+                    .call("workspace_restore", json!({"handle":handle}))
+                    .await
+                    .unwrap_err()
+                    .code,
+                "INVALID_PARAMS"
+            );
+            {
+                let mut session = engine.session.lock().await;
+                Engine::finish_call(
+                    &mut session,
+                    "workspace_verify",
+                    &json!({}),
+                    Ok(json!({"handle":handle})),
+                )
+                .unwrap();
+                assert_eq!(
+                    session.as_ref().unwrap().restore_handle.as_deref(),
+                    Some(handle.as_str())
+                );
+                session.as_mut().unwrap().preparation = Some("b".repeat(48));
+            }
+            assert_eq!(
+                engine
+                    .call("workspace_backup", json!({}))
+                    .await
+                    .unwrap_err()
+                    .code,
+                "BUSY"
+            );
+        });
+    }
+
     fn empty_session() -> Session {
         let (_tx, rx) = tauri::async_runtime::channel(1);
         Session {
@@ -608,6 +698,7 @@ mod tests {
             preparation: None,
             prepared_pdf: Default::default(),
             prepared_models: Default::default(),
+            restore_handle: None,
         }
     }
     fn issue(session: &mut Option<Session>, handle: &str) {
@@ -700,6 +791,7 @@ mod tests {
             let engine = Engine {
                 data_dir: Mutex::new(None),
                 sandbox_dir: None,
+                personal: false,
                 picking: Mutex::new(()),
                 session: Mutex::new(session),
                 closing,
@@ -846,6 +938,7 @@ mod tests {
             let engine = Engine {
                 data_dir: Mutex::new(None),
                 sandbox_dir: None,
+                personal: false,
                 picking: Mutex::new(()),
                 session: Mutex::new(session),
                 closing,

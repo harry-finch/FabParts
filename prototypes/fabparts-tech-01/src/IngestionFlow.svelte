@@ -7,8 +7,8 @@ import Disclosure from '../../fabparts-ux/src/components/Disclosure.svelte';
 import AssetPreview from './AssetPreview.svelte';
 import { roleLabel } from './text';
 import { IngestionController, initialIngestion, browserRecovery, ingestionRoles, type IngestionState } from './ingestion';
-let { partId='', library='all', oncancel, onsave, onexisting }:{
-  partId?:string;library?:string;oncancel:()=>void;onsave:(id:string)=>Promise<void>;onexisting:(id:string)=>Promise<void>
+let { personal=false, partId='', library='all', oncancel, onsave, onexisting }:{
+  personal?:boolean;partId?:string;library?:string;oncancel:()=>void;onsave:(id:string)=>Promise<void>;onexisting:(id:string)=>Promise<void>
 }=$props();
 let s=$state<IngestionState>(initialIngestion());
 let queries=$state<Record<string,string>>({});
@@ -29,7 +29,7 @@ async function packageChanged(value:string){flow.edit({package_id:value,package_
   <header class="page-heading">
     <button class="btn quiet" disabled={s.busy||s.recovery} onclick={()=>s.step>0?flow.back(s.step-1):cancel()}><ArrowLeft size={14}/>{tr('Retour','Back')}</button>
     <h1>{partId?tr('Compléter le brouillon','Complete draft'):tr('Ajouter un composant','Add component')}</h1>
-    <span class="secondary">{tr('Environnement de test','Test environment')}</span>
+    <span class="secondary">{personal?tr('Espace personnel','Personal workspace'):tr('Environnement de test','Test environment')}</span>
   </header>
   <nav class="steps" aria-label={tr('Étapes de l’ajout','Ingestion steps')}>
     {#each [tr('Informations et fichiers','Information and files'),tr('Identification et package','Identity and package'),tr('Ressources et confirmation','Resources and confirmation')] as label,i}
@@ -119,7 +119,7 @@ async function packageChanged(value:string){flow.edit({package_id:value,package_
   </div>
   <footer class="flow-footer">
     <button class="btn" disabled={s.busy||s.recovery} onclick={cancel}>{tr('Annuler l’ajout','Cancel addition')}</button>
-    <span class="secondary small">{tr('Sauvegarde locale · sandbox','Local save · sandbox')}</span><div class="grow"></div>
+    <span class="secondary small">{personal?tr('Enregistrement local','Local save'):tr('Sauvegarde locale · sandbox','Local save · sandbox')}</span><div class="grow"></div>
     {#if s.step<2}<button class="btn primary" disabled={s.busy||!s.session||s.recovery} onclick={()=>flow.next()}>{tr('Continuer','Continue')}<ArrowRight size={14}/></button>
     {:else}
       {#if incomplete}<button class="btn" disabled={s.busy||s.recovery||!!s.duplicates.length&&!s.variant} onclick={()=>flow.commit(s.variant?'variant':'save')}>{tr('Enregistrer comme brouillon','Save as draft')}</button>{/if}

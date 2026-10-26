@@ -309,3 +309,16 @@ l'interface consulte le reçu et propose la récupération, sans annoncer de suc
 prématuré. Les contrôles du parcours sont traduits FR/EN ; les diagnostics moteur
 hérités encore en français sont une réserve explicite. Les preuves natives en
 clair/sombre et fenêtre étroite figurent dans [TECH-03](FABPARTS_2_TECH_03.md).
+
+## TECH-04A — Paramètres et données
+
+Le mode personnel expose un bouton Paramètres dans la barre existante. Trois
+sections partagées présentent le workspace actif, la sauvegarde et la restauration.
+Les chemins longs se replient ; l'espace reste défilable. Réutiliser les tokens,
+Section et boutons existants, sans nouveau thème.
+
+Tous les nouveaux libellés sont FR/EN. La source est choisie dans un sélecteur
+macOS ; le bouton Restaurer n'apparaît qu'après vérification. La confirmation
+native indique la conservation des données précédentes. Pendant l'opération les
+actions sont désactivées ; aucun succès n'est anticipé. Après restauration, les
+écritures restent bloquées et un bouton explicite redémarre le moteur.

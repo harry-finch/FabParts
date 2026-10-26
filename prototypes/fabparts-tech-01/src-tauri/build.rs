@@ -14,6 +14,10 @@ fn main() {
             "release_model_preview",
             "ingestion_command",
             "choose_ingestion_files",
+            "workspace_info",
+            "backup_workspace",
+            "choose_workspace_backup",
+            "restore_workspace",
         ]),
     ))
     .expect("Tauri build configuration");
