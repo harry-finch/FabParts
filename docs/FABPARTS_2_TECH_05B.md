@@ -78,7 +78,7 @@ d'une actualisation ou d'un échec.
 
 ## Qualification et preuves
 
-- Python : **585 tests** (dont 29 contrôles ciblés d'intégration), FreeCAD activé.
+- Python : **588 tests** (dont 32 contrôles ciblés d'intégration), FreeCAD activé.
 - Rust : **32 tests** ; `cargo fmt --check` conforme.
 - Frontend : **79 tests TECH + 12 tests UX** ; Svelte : 0 erreur, 0 warning.
 - Ruff, formatage et mypy conformes ; paquet Tauri ARM64 avec sidecar reconstruit.
@@ -110,6 +110,28 @@ Captures : [résumé sombre](tech05b/activation-summary-dark.jpg),
 [reprise du paquet final](tech05b/final-package-recovery.jpg).
 Les assets sont des fixtures synthétiques de résolution, pas des composants qualifiés
 pour fabrication ; leurs dessins minimaux ne constituent pas une validation électrique.
+
+## Correction finale de revue Product Owner
+
+La récupération vérifie désormais la Collection propriétaire inscrite dans le
+journal scellé, à la préparation du résumé et de nouveau lors de son application.
+Une demande pour une autre Collection est refusée avant toute écriture des tables,
+même indépendamment du rattachement de la capacité de session. La reprise par la
+Collection propriétaire reste possible. Aucun changement d'architecture ou d'UI.
+
+Les tests injectent aussi une interruption après l'engagement du nouvel état global
+mais avant le miroir workspace, pour une première installation et une mise à jour.
+Après recréation de l'adaptateur, la version engagée et son historique restent
+visibles avec RECONCILE_REQUIRED ; aucune restauration automatique ni réécriture
+externe à la lecture/préparation. L'activation explicite réconcilie le miroir,
+conserve tout l'historique d'opérations et M7 et réutilise la copie vérifiée sans
+modifier les octets ni la date de modification des tables. Ce comportement existant
+n'a pas nécessité de changement de logique.
+
+Validation de cette correction : 32 tests d'intégration ciblés, suite Python complète
+588 tests avec FreeCAD, Ruff/formatage et mypy conformes. Rust, Svelte et les parcours
+natifs restent inchangés ; leurs résultats ci-dessus proviennent de la qualification
+TECH-05B précédente, sans nouvelle inspection visuelle pour cette correction backend.
 
 ## Limites et conditions
 

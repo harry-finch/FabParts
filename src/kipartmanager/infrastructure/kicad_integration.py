@@ -540,11 +540,20 @@ class LocalKiCadIntegration:
             raise DomainError("INVALID_JOURNAL: backup schema")
         return dict(data)
 
+    @staticmethod
+    def _check_recovery_collection(collection_id: UUID, journal: dict[str, Any]) -> None:
+        owner = journal["next_state"]["operations"][-1]["collection"]
+        if owner != str(collection_id):
+            raise DomainError(
+                "RECOVERY_COLLECTION_MISMATCH: interrupted operation belongs to another collection"
+            )
+
     def recovery(self, collection_id: UUID, target: str) -> dict[str, Any]:
         raw, state = self._state(target)
         if not state["pending"]:
             raise DomainError("NO_RECOVERY: no interrupted operation")
         journal = self._journal(target, state["pending"])
+        self._check_recovery_collection(collection_id, journal)
         self._recoverable(target, journal, state["pending"])
         item = {
             "collection": str(collection_id),
@@ -583,6 +592,7 @@ class LocalKiCadIntegration:
             if raw != item["state_raw"]:
                 raise DomainError("SUMMARY_CHANGED: recovery changed")
             journal = self._journal(target, state["pending"])
+            self._check_recovery_collection(collection_id, journal)
             if journal != item["journal"]:
                 raise DomainError("INVALID_JOURNAL: backup changed")
             self._recoverable(target, journal, state["pending"])

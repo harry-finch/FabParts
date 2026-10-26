@@ -567,3 +567,105 @@ def test_kicad10_refuses_legacy_comments_without_touching_tables(
     assert path.read_bytes() == raw
     with pytest.raises(DomainError, match="TABLE_FORMAT"):
         Table.read(b"; not a KiCad comment\n(sym_lib_table)\n", 0)
+
+
+def test_recovery_is_scoped_to_the_interrupted_collection(
+    integration: tuple[KiCadIntegration, LocalKiCadIntegration, Collection],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, adapter, collection = integration
+    other = Collection(name="Other collection")
+    interrupt(integration, monkeypatch)
+    before = tree_files(adapter.target("10.0"))
+    with pytest.raises(DomainError, match="RECOVERY_COLLECTION_MISMATCH"):
+        service.recovery(str(other.id), "10.0")
+    assert not adapter.viewed
+    assert tree_files(adapter.target("10.0")) == before
+
+    preview = service.recovery(str(collection.id), "10.0")
+    with pytest.raises(DomainError, match="SUMMARY_CHANGED"):
+        service.recover(str(other.id), "10.0", preview["handle"])
+    assert tree_files(adapter.target("10.0")) == before
+
+    # The journal owner must be checked again at application time, independently
+    # of the cached capability's collection binding.
+    preview = service.recovery(str(collection.id), "10.0")
+    adapter.viewed[preview["handle"]]["collection"] = str(other.id)
+    with pytest.raises(DomainError, match="RECOVERY_COLLECTION_MISMATCH"):
+        service.recover(str(other.id), "10.0", preview["handle"])
+    assert tree_files(adapter.target("10.0")) == before
+    preview = service.recovery(str(collection.id), "10.0")
+    assert service.recover(str(collection.id), "10.0", preview["handle"])["state"] == "UNCONFIGURED"
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_interruption_after_committed_state_requires_explicit_mirror_reconciliation(
+    integration: tuple[KiCadIntegration, LocalKiCadIntegration, Collection],
+    monkeypatch: pytest.MonkeyPatch,
+    version: int,
+) -> None:
+    import kipartmanager.infrastructure.kicad_integration as module
+
+    service, adapter, collection = integration
+    if version == 2:
+        activate(integration)
+        service.publications.publish(collection, 2)
+    _, previous = adapter._state("10.0")
+    publications_before = tree_files(adapter.publications.root)
+    mirror = adapter._mirror("10.0", str(collection.id))
+    mirror_before = mirror.read_bytes() if mirror.exists() else None
+    preview = service.prepare(str(collection.id), "10.0", version)
+    from kipartmanager.infrastructure.workspace_backup import atomic_json
+
+    original = atomic_json
+
+    def fail_mirror(path: Path, data: dict[str, Any]) -> None:
+        if path == mirror:
+            raise OSError("power loss after global state commit, before workspace mirror")
+        original(path, data)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "atomic_json", fail_mirror)
+        with pytest.raises(OSError, match="after global state commit"):
+            service.activate(str(collection.id), "10.0", preview["handle"])
+
+    _, committed = adapter._state("10.0")
+    assert committed["pending"] is None
+    assert committed["active"][str(collection.id)]["version"] == version
+    assert committed["operations"][:-1] == previous["operations"]
+    assert len(committed["operations"]) == len(previous["operations"]) + 1
+    operation = committed["operations"][-1]["id"]
+    journal = adapter._journal("10.0", operation)
+    assert journal["next_state"] == committed and journal["previous_state"] == previous
+    assert (mirror.read_bytes() if mirror.exists() else None) == mirror_before
+
+    external = tree_files(adapter.target("10.0"))
+    tables = [adapter.target("10.0") / name for name in NAMES]
+    table_stats = [(p.read_bytes(), p.stat().st_mtime_ns) for p in tables]
+    restarted = LocalKiCadIntegration(
+        adapter.data_root, adapter.publications, adapter.config_root, adapter.versions
+    )
+    status = restarted.status(collection.id, "10.0")
+    assert status["state"] == "RECONCILE_REQUIRED" and status["active"] == version
+    assert status["operations"][0]["id"] == operation
+    with pytest.raises(DomainError, match="NO_RECOVERY"):
+        restarted.recovery(collection.id, "10.0")
+    publication = next(
+        p for p in adapter.publications.list_publications(collection.id) if p.version == version
+    )
+    summary = restarted.prepare(publication, "10.0")
+    assert summary["reconcile"]
+    assert tree_files(adapter.target("10.0")) == external
+    assert (mirror.read_bytes() if mirror.exists() else None) == mirror_before
+
+    # Only this explicit activation repairs the mirror. The same immutable copy
+    # is reused, so no table replacement is needed and no committed history is lost.
+    assert restarted.activate(collection.id, "10.0", summary["handle"])["state"] == "CURRENT"
+    _, reconciled = restarted._state("10.0")
+    assert reconciled["operations"][:-1] == committed["operations"]
+    assert json.loads(mirror.read_bytes()) == {
+        "operation": reconciled["operations"][-1]["id"],
+        "workspace": str(adapter.data_root),
+    }
+    assert [(p.read_bytes(), p.stat().st_mtime_ns) for p in tables] == table_stats
+    assert tree_files(adapter.publications.root) == publications_before
