@@ -34,3 +34,23 @@ test('provider error never retries or saves; new authorization is required',asyn
 test('revision error before acceptance keeps local saved state and exposes no false success',async()=>{
  const f=setup({assistance_accept:()=>{throw Error('Context changed');}});await f.flow.prepare();f.flow.authorize(true);await f.flow.start();f.flow.select('category',true);await f.flow.accept();assert.equal(f.saved.length,0);assert.equal(f.flow.state.message,'');assert.equal(f.flow.state.error,'Context changed');
 });
+
+test('safe diagnostics survive the job boundary; edits clear them and never retry',async()=>{
+ const f=setup({assistance_status:()=>({status:'error',rows:[],error:{code:'authentication',http_status:401}})});
+ await f.flow.prepare();f.flow.authorize(true);await f.flow.start();
+ assert.deepEqual(f.flow.state.diagnostic,{code:'authentication',http_status:401});
+ assert.equal(f.flow.state.error,'analysis_failed');assert.equal(f.saved.length,0);
+ f.flow.edit('changed',false);assert.equal(f.flow.state.diagnostic,null);
+ assert.equal(f.calls.filter(c=>c.method==='assistance_start').length,1);
+});
+
+test('diagnostics are translated, actionable and never reflect unknown provider text',async()=>{
+ const {assistanceError}=await import('../src/assistance-errors.ts');
+ for(const [code,fr,en] of [['authentication','Authentification','Authentication'],['no_suggestions','sans suggestion','without usable'],['incomplete','limite de sortie','output limit'],['timeout','délai','time limit']]){
+  assert.ok(assistanceError({code,http_status:null},'fr').includes(fr));
+  assert.ok(assistanceError({code,http_status:null},'en').includes(en));
+ }
+ assert.ok(assistanceError({code:'authentication',http_status:401},'fr').includes('HTTP 401'));
+ assert.ok(!assistanceError({code:'provider-secret',http_status:'secret'},'fr').includes('secret'));
+ assert.ok(!assistanceError({code:'__proto__',http_status:null},'en').includes('__proto__'));
+});

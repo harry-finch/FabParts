@@ -18,6 +18,36 @@ class AssistanceBackend(StrEnum):
     OLLAMA = "ollama"
 
 
+class AssistanceErrorCode(StrEnum):
+    MISSING_KEY = "missing_key"
+    AUTHENTICATION = "authentication"
+    PERMISSION = "permission"
+    MODEL_OR_ENDPOINT = "model_or_endpoint"
+    RATE_LIMIT = "rate_limit"
+    BAD_REQUEST = "bad_request"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    HTTP_ERROR = "http_error"
+    NETWORK = "network"
+    TIMEOUT = "timeout"
+    REDIRECT = "redirect"
+    TOO_LARGE = "too_large"
+    BLOCKED = "blocked"
+    INCOMPLETE = "incomplete"
+    INVALID_RESPONSE = "invalid_response"
+    NO_SUGGESTIONS = "no_suggestions"
+    UNKNOWN = "unknown"
+
+
+class AssistanceFailure(DomainError):
+    """Safe diagnostic: never carry provider text, URLs, context or credentials."""
+
+    def __init__(
+        self, code: AssistanceErrorCode, message: str, http_status: int | None = None
+    ) -> None:
+        super().__init__(message)
+        self.code, self.http_status = code, http_status
+
+
 @dataclass(frozen=True)
 class AssistanceConfiguration:
     enabled: bool = False

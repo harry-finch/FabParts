@@ -4,8 +4,9 @@ export type Identification={revision:number;values:Record<string,string>;history
 export type PreparedAI={handle:string;payload:string;sha256:string;destination:string;backend:string;model:string;revision:number};
 export type AIRow={field:string;current:string;proposed:string;conflict:boolean};
 export const ai=<T>(invoke:Transport,method:string,params:Record<string,unknown>={}):Promise<T>=>invoke<T>('assistance_command',{request:{method,params}});
-export type AIState={config:AIConfig|null;identification:Identification|null;prepared:PreparedAI|null;text:string;include:boolean;consent:boolean;rows:AIRow[];selected:string[];replace:boolean;pending:boolean;saving:boolean;error:string;message:string};
-export const initialAI=():AIState=>({config:null,identification:null,prepared:null,text:'',include:false,consent:false,rows:[],selected:[],replace:false,pending:false,saving:false,error:'',message:''});
+export type AIDiagnostic={code:string;http_status:number|null};
+export type AIState={config:AIConfig|null;identification:Identification|null;prepared:PreparedAI|null;text:string;include:boolean;consent:boolean;rows:AIRow[];selected:string[];replace:boolean;pending:boolean;saving:boolean;diagnostic:AIDiagnostic|null;error:string;message:string};
+export const initialAI=():AIState=>({config:null,identification:null,prepared:null,text:'',include:false,consent:false,rows:[],selected:[],replace:false,pending:false,saving:false,diagnostic:null,error:'',message:''});
 export class AssistanceController {
  state=initialAI();private epoch=0;private handle='';private invoke:Transport;private id:string;
  private changed:(state:AIState)=>void;private accepted:()=>Promise<void>|void;private delay:()=>Promise<void>;
@@ -14,7 +15,7 @@ export class AssistanceController {
  private error(e:unknown){return (e as {message?:string}).message||String(e);}
  async load(){const epoch=this.epoch;try{const [config,identification]=await Promise.all([ai<AIConfig>(this.invoke,'assistance_configuration'),ai<Identification>(this.invoke,'assistance_identification',{id:this.id})]);if(epoch===this.epoch)this.emit({config,identification});}catch(e){if(epoch===this.epoch)this.emit({error:this.error(e)});}}
  private async revoke(handle:string){try{await ai(this.invoke,'assistance_cancel',{id:this.id,handle});}catch{/* Session may already be closed. */}}
- invalidate(){this.epoch++;const handle=this.handle;this.handle='';if(handle)void this.revoke(handle);this.emit({prepared:null,consent:false,rows:[],selected:[],replace:false,pending:false,error:'',message:''});}
+ invalidate(){this.epoch++;const handle=this.handle;this.handle='';if(handle)void this.revoke(handle);this.emit({prepared:null,consent:false,rows:[],selected:[],replace:false,pending:false,diagnostic:null,error:'',message:''});}
  edit(text:string,include:boolean){if(this.state.saving)return;this.invalidate();this.emit({text,include});}
  authorize(value:boolean){if(this.state.prepared&&!this.state.pending)this.emit({consent:value});}
  select(field:string,value:boolean){const selected=value?[...new Set([...this.state.selected,field])]:this.state.selected.filter(f=>f!==field);this.emit({selected,replace:false});}
@@ -26,11 +27,11 @@ export class AssistanceController {
  }
  async start(){
   const prepared=this.state.prepared;if(!prepared||!this.state.consent||this.state.pending)return;
-  const epoch=this.epoch;this.emit({pending:true,consent:false,rows:[],selected:[],replace:false,error:'',message:''});
+  const epoch=this.epoch;this.emit({pending:true,consent:false,rows:[],selected:[],replace:false,diagnostic:null,error:'',message:''});
   try{
    await ai(this.invoke,'assistance_start',{id:this.id,handle:prepared.handle,consent:true});
-   while(epoch===this.epoch){const result=await ai<{status:string;rows:AIRow[]}>(this.invoke,'assistance_status',{id:this.id,handle:prepared.handle});if(epoch!==this.epoch)return;
-    if(result.status==='error')throw Error('analysis_failed');
+   while(epoch===this.epoch){const result=await ai<{status:string;rows:AIRow[];error?:AIDiagnostic}>(this.invoke,'assistance_status',{id:this.id,handle:prepared.handle});if(epoch!==this.epoch)return;
+    if(result.status==='error'){this.emit({diagnostic:result.error??{code:'unknown',http_status:null}});throw Error('analysis_failed');}
     if(result.status==='ready'){this.emit({rows:result.rows,selected:[],replace:false});return;}
     await this.delay();
    }

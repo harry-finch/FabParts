@@ -3,6 +3,7 @@ import {onMount,untrack} from 'svelte';
 import {invoke} from '@tauri-apps/api/core';
 import {i18n} from '../../fabparts-ux/src/lib/i18n.svelte';
 import Disclosure from '../../fabparts-ux/src/components/Disclosure.svelte';
+import {assistanceError} from './assistance-errors';
 import {AssistanceController,initialAI,type AIState} from './assistance';
 let {id,onsaved=()=>{}}:{id:string;onsaved?:()=>Promise<void>|void}=$props();
 let s=$state<AIState>(initialAI());
@@ -16,7 +17,7 @@ onMount(()=>{void flow.load();return()=>flow.dispose();});
 <section class="ai-panel" aria-busy={s.saving}>
  <p class="secondary">{tr('L’IA propose des informations non vérifiées. Aucun fichier, catalogue ou PDF n’est envoyé automatiquement.','AI suggestions are unverified. No file, catalogue or PDF is sent automatically.')}</p>
  {#if s.config}
- <p class="secondary">{s.config.backend} · {s.config.model||tr('Modèle non configuré','Model not configured')} · {s.config.availability==='disabled'?tr('Désactivée · configurer dans Paramètres','Disabled · configure in Settings'):s.config.availability==='missing_key'?tr('Clé absente · voir Paramètres','Missing key · see Settings'):tr('Sur demande seulement','On request only')}</p>
+ <p class="secondary">{s.config.backend} · {s.config.model||tr('Modèle non configuré','Model not configured')} · {s.config.availability==='disabled'?tr('Désactivée · configurer dans Paramètres','Disabled · configure in Settings'):s.config.availability==='missing_key'?tr('Clé absente · voir Paramètres','Missing key · see Settings'):s.config.backend==='ollama'?tr('Sur demande seulement','On request only'):tr('Clé détectée · validité non vérifiée','Key detected · validity not checked')}</p>
  {/if}
  <fieldset disabled={s.saving}>
  <label>{tr('Contexte à analyser','Context to analyze')}<textarea class="input" rows="5" maxlength="32000" value={s.text} oninput={e=>flow.edit(e.currentTarget.value,s.include)} placeholder={tr('Extrait textuel, marquage observé ou informations connues…','Text excerpt, observed marking or known information…')}></textarea></label>
@@ -43,7 +44,7 @@ onMount(()=>{void flow.load();return()=>flow.dispose();});
   {#if conflicts}<label class="check"><input type="checkbox" checked={s.replace} disabled={s.saving} onchange={e=>flow.replace(e.currentTarget.checked)}/>{tr('Je confirme le remplacement des valeurs existantes cochées.','I confirm replacing the checked existing values.')}</label>{/if}
   <div class="row"><button class="btn primary" disabled={s.saving||!s.selected.length||conflicts&&!s.replace} onclick={()=>flow.accept()}>{tr('Accepter les champs cochés','Accept checked fields')}</button><button class="btn" disabled={s.saving} onclick={()=>flow.invalidate()}>{tr('Ignorer les propositions','Ignore suggestions')}</button></div>
  </div>{/if}
- {#if s.error}<p class="error" role="alert">{s.error==='analysis_failed'?tr('Analyse échouée ou réponse invalide. Aucun champ enregistré. Vérifiez le fournisseur ou continuez manuellement.','Analysis failed or response invalid. No fields saved. Check the provider or continue manually.'):s.error}</p>{/if}
+ {#if s.error}<p class="error" role="alert">{s.error==='analysis_failed'?assistanceError(s.diagnostic,i18n.locale):s.error}</p>{/if}
  {#if s.message}<p role="status">{tr('Champs acceptés et provenance enregistrés.','Accepted fields and provenance saved.')}</p>{/if}
  {#if s.identification?.history.length}<Disclosure id="ai-identification-history" label={tr('Historique de l’identification','Identification history')}>{#each [...s.identification.history].reverse() as event}<div class="history"><span>{event.recorded_at} · {event.source.label} · {event.source.origin}</span><span class="secondary">{event.source.reference}</span>{#each event.after as value}<span>{label(value.field)} : {event.before.find(v=>v.field===value.field)?.value||'—'} → {value.value}</span>{/each}</div>{/each}</Disclosure>{/if}
 </section>

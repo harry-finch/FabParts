@@ -426,3 +426,13 @@ IA restent des propositions non vérifiées, tous décochés à réception. Un r
 coché exige sa confirmation séparée. Ignorer/annuler ne change pas les données ;
 le réseau ne bloque pas la navigation. Une erreur n'entraîne aucun retry automatique.
 Les libellés des nouvelles sections sont FR/EN, sans nouvelle page ni refonte.
+
+### Diagnostics IA Tauri
+
+Après échec d'une requête autorisée, afficher un constat précis traduit FR/EN,
+le statut HTTP s'il existe et une action adaptée (clé, droits, modèle, quota,
+réseau, délai, format ou absence de suggestion). Ne pas assimiler clé détectée et
+clé valide. Ne jamais afficher le corps d'erreur fournisseur ou une exception
+brute ; les codes autorisés du moteur pilotent les libellés. Aucun retry implicite,
+aucun champ enregistré sur échec ; conserver le contexte saisi et réinitialiser
+le consentement. Une modification efface les diagnostics de l'ancien contexte.
