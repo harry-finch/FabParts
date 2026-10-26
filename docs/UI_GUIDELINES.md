@@ -337,3 +337,21 @@ Une réponse neuve ou un changement de contexte réinitialise la confirmation.
 La qualification de bibliothèque reste un rapport simple avec accès aux membres,
 sans commande de publication. Voir les limites précises dans
 [FABPARTS_2_TECH_04B.md](FABPARTS_2_TECH_04B.md).
+
+### Publications KiCad — TECH-05A
+
+L’action Publications KiCad appartient à la bibliothèque sélectionnée. Le rapport
+Collection M5, indépendant des rapports Part, conditionne la préparation. Un résumé
+paginé affiche composants, ressources, version et WARNING acceptés ; une case vide
+et une confirmation explicite précèdent l’écriture immuable. Les refus du builder
+restent visibles. Les versions affichent « Non vérifiée » jusqu’au contrôle effectif,
+et ce contrôle ponctuel est oublié à l’actualisation. Les détails historiques ne
+prétendent pas qualifier le catalogue courant.
+
+Après réponse incertaine, une demande persistée côté interface bloque tout nouvel
+essai jusqu’à consultation du COMMIT dans le même espace de données. La reconnexion
+n’envoie jamais une seconde publication. La reconstruction utilise un sélecteur natif
+pour le dossier parent et un sous-dossier neuf généré par l’hôte. L’aide parle
+uniquement d’intégration de **projet** `${KIPRJMOD}`. Aucune installation globale,
+activation de version ou synchronisation n’est proposée. Tokens, densité, thèmes et
+composants FabApps existants sont conservés ; textes FR/EN typés.

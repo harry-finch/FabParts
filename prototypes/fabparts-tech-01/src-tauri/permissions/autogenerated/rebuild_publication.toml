@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-rebuild-publication"
+description = "Enables the rebuild_publication command without any pre-configured scope."
+commands.allow = ["rebuild_publication"]
+
+[[permission]]
+identifier = "deny-rebuild-publication"
+description = "Denies the rebuild_publication command without any pre-configured scope."
+commands.deny = ["rebuild_publication"]

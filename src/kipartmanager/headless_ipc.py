@@ -13,14 +13,20 @@ from kipartmanager import __version__
 from kipartmanager.application.asset_previews import AssetPreviews
 from kipartmanager.application.catalogue_reader import CatalogueReader
 from kipartmanager.application.ingestion import Ingestion
+from kipartmanager.application.publication_review import PublicationReview
 from kipartmanager.application.validation_review import ReportChanged, ValidationReview
 from kipartmanager.domain.entities import DomainError, PartState
+from kipartmanager.infrastructure.ingestion_sandbox import checked_root
 from kipartmanager.infrastructure.readonly_catalogue import SCHEMA
 from kipartmanager.infrastructure.user_workspace import UserWorkspace
 from kipartmanager.ingestion_ipc import FIELDS as INGESTION_METHODS
 from kipartmanager.ingestion_ipc import dispatch
 from kipartmanager.ingestion_ipc import validate as validate_ingestion
 from kipartmanager.ports.previews import PDF_LIMIT
+from kipartmanager.publication_ipc import METHODS as PUBLICATION_METHODS
+from kipartmanager.publication_ipc import WRITES as PUBLICATION_WRITES
+from kipartmanager.publication_ipc import dispatch as dispatch_publication
+from kipartmanager.publication_ipc import validate as validate_publication
 from kipartmanager.validation_ipc import METHODS as VALIDATION_METHODS
 from kipartmanager.validation_ipc import WRITES as VALIDATION_WRITES
 from kipartmanager.validation_ipc import dispatch as dispatch_validation
@@ -120,6 +126,7 @@ def respond(
     schema: str = SCHEMA,
     workspace: UserWorkspace | None = None,
     review: ValidationReview | None = None,
+    publications: PublicationReview | None = None,
 ) -> dict[str, Any]:
     identity = None
     try:
@@ -142,6 +149,30 @@ def respond(
         method = request["method"]
         if not isinstance(method, str):
             raise ProtocolError("INVALID_REQUEST", "Nom de commande requis.")
+        if method in PUBLICATION_METHODS:
+            if publications is None:
+                raise ProtocolError("READ_FAILED", "Publications unavailable")
+            if method in PUBLICATION_WRITES and (
+                ingestion is None or bool(workspace and workspace.requires_restart)
+            ):
+                raise ProtocolError("READ_ONLY", "Publication writes unavailable")
+            if ingestion is not None and ingestion.preparation is not None:
+                raise ProtocolError("BUSY", "Finish the active preparation first")
+            try:
+                params = validate_publication(method, request["params"])
+            except (ValueError, TypeError, AttributeError) as error:
+                raise ProtocolError("INVALID_PARAMS", str(error)) from error
+            if method == "publication_rebuild":
+                target = checked_root(Path(params["destination"]))
+                if workspace and target.is_relative_to(workspace.home.resolve()):
+                    raise DomainError("Destination dans le workspace personnel interdite.")
+            publication_result = dispatch_publication(publications, method, params)
+            return {
+                "protocol_version": 1,
+                "request_id": identity,
+                "ok": True,
+                "result": publication_result,
+            }
         if method in VALIDATION_METHODS:
             if review is None:
                 raise ProtocolError("READ_FAILED", "Validation unavailable")
@@ -263,6 +294,7 @@ def serve(
     schema: str = SCHEMA,
     workspace: UserWorkspace | None = None,
     review: ValidationReview | None = None,
+    publications: PublicationReview | None = None,
 ) -> None:
     while raw := source.readline(MAX_REQUEST + 1):
         if len(raw) > MAX_REQUEST:
@@ -273,7 +305,9 @@ def serve(
         if not raw.endswith(b"\n"):
             response = error_response(None, "INVALID_REQUEST", "Message JSONL incomplet.")
         else:
-            response = respond(raw, reader, previews, ingestion, schema, workspace, review)
+            response = respond(
+                raw, reader, previews, ingestion, schema, workspace, review, publications
+            )
         encoded = json.dumps(response, ensure_ascii=False, allow_nan=False).encode()
         if len(encoded) > MAX_RESPONSE:
             encoded = json.dumps(

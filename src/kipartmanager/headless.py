@@ -1,6 +1,7 @@
 """FabParts composition root: explicit personal, sandbox or immutable-copy session."""
 
 import argparse
+import hashlib
 import sys
 from pathlib import Path
 
@@ -12,6 +13,9 @@ from kipartmanager.application.catalogue_reader import CatalogueReader
 from kipartmanager.application.ingestion import Ingestion
 from kipartmanager.application.kicad import KiCadLibraries
 from kipartmanager.application.model_jobs import ModelJobs
+from kipartmanager.application.publication_review import PublicationReview
+from kipartmanager.application.publications import Publications
+from kipartmanager.application.publisher import LocalPublisher
 from kipartmanager.application.resolver import LocalResolver
 from kipartmanager.application.validation import LocalValidation
 from kipartmanager.application.validation_review import ValidationReview
@@ -22,8 +26,10 @@ from kipartmanager.infrastructure.documentation import SqliteDocumentation
 from kipartmanager.infrastructure.ingestion_sandbox import open_sandbox
 from kipartmanager.infrastructure.ingestion_transactions import SqliteIngestionTransactions
 from kipartmanager.infrastructure.kicad_index import LocalKiCadIndex
+from kipartmanager.infrastructure.library_builder import LocalLibraryBuilder
 from kipartmanager.infrastructure.model_preview import convert_mesh
 from kipartmanager.infrastructure.prepared_files import LocalPreparedFiles
+from kipartmanager.infrastructure.publications import LocalPublications
 from kipartmanager.infrastructure.readonly_catalogue import open_copy
 from kipartmanager.infrastructure.readonly_previews import ReadonlyPreviews
 from kipartmanager.infrastructure.resource_probe import LocalResourceProbe
@@ -76,6 +82,16 @@ def main() -> int:
                 SqliteValidationReports(engine),
             )
         )
+        builder = LocalLibraryBuilder(
+            LocalAssetStore(data_dir / "assets"), LocalKiCadIndex(data_dir), data_dir
+        )
+        publications = PublicationReview(
+            Publications(
+                LocalPublisher(catalogue, review.validation, builder),
+                LocalPublications(data_dir / "publications", builder),
+            ),
+            scope=hashlib.sha256(str(data_dir.resolve()).encode()).hexdigest(),
+        )
         previews = AssetPreviews(reader, ReadonlyPreviews(data_dir), ModelJobs(convert_mesh))
         ingestion = None
         if (sandbox or personal) and store:
@@ -102,6 +118,7 @@ def main() -> int:
                 schema,
                 personal,
                 review,
+                publications,
             )
         finally:
             previews.clear()
