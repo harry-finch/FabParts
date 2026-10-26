@@ -151,3 +151,31 @@ pendant ce checkpoint. Une clé, un modèle accessible et une exécution autoris
 restent nécessaires pour qualifier le service réellement choisi.
 Pas de chatbot, conversation persistante, retrieval automatique, lecture automatique
 PDF, estimation fiable de confiance ou validation électrique. M12 non démarrée.
+
+## FabParts Tauri — TECH-06C
+
+Les mêmes services M11 sont maintenant accessibles depuis la fiche complète,
+section **Assistance IA · facultative**, et **Paramètres → Assistance IA — Facultative**.
+Le contexte n'est jamais déduit d'un PDF. Préparer, autoriser l'envoi et accepter
+les champs sont trois actions distinctes. Le JSON utilisateur exact et la destination
+réelle sont affichés avant l'autorisation, sans identifiant, historique ou fichier
+ajouté. Le modèle doit déjà être disponible chez le fournisseur ou dans Ollama.
+
+Le host conserve `env_clear()` et transmet seulement les deux variables M11
+GEMINI_API_KEY / KIPART_AI_API_KEY, jamais au frontend. Il faut relancer FabParts
+depuis l'environnement configuré ; l'interface n'enregistre pas les clés.
+« Configuration prête » signale la configuration/clé locale, sans sonde réseau ni
+garantie de disponibilité du modèle. Pas d'inférence au démarrage ou à l'ingestion.
+
+L'analyse utilise un worker borné, la navigation reste disponible. Modifier,
+ignorer ou quitter révoque la session ; une réponse retardée est rejetée. Avant
+acceptation, Python revérifie composant, configuration et révision M10. Tous les
+champs commencent décochés ; seuls les champs explicitement acceptés et leur
+provenance sont persistés atomiquement. Les derniers événements sont consultables
+sur place. Le transport ne réessaie pas automatiquement une acceptation incertaine :
+recharger la fiche/l'historique avant de décider à nouveau.
+
+La qualification TECH-06C (simulations, inspection native et limites des essais
+réels) est détaillée dans [le rapport](FABPARTS_2_TECH_06C.md). Les constatations
+historiques M11 ci-dessus ne constituent pas une qualification live d'un compte
+Gemini/OpenAI ou d'un modèle Ollama installé.

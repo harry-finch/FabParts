@@ -19,6 +19,7 @@
     "allow-release-model-preview",
     "allow-ingestion-command",
     "allow-external-command",
+    "allow-assistance-command",
     "allow-choose-ingestion-files",
     "allow-integration-command",
     "allow-publication-query",

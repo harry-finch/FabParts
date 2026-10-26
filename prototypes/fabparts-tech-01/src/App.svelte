@@ -61,7 +61,7 @@ function resize(event: PointerEvent) {
 </script>
 <svelte:window onkeydown={keydown}/>
 <div class="app-shell">
-  <header class="appbar"><div class="brand"><img src="/logo.svg" alt=""/><strong>FabParts</strong></div><span class="tagline">{t('libraries')}</span><span class="demo-label">{'TECH-06B'} <span>{personal?wt('personal'):writable?tr('Sandbox local','Local sandbox'):t('copy')}</span></span>
+  <header class="appbar"><div class="brand"><img src="/logo.svg" alt=""/><strong>FabParts</strong></div><span class="tagline">{t('libraries')}</span><span class="demo-label">{'TECH-06C'} <span>{personal?wt('personal'):writable?tr('Sandbox local','Local sandbox'):t('copy')}</span></span>
     <div class="bar-right">{#if personal}<button class="btn quiet icon" disabled={adding||workspaceBusy||validationBusy} aria-label={wt('settings')} title={wt('settings')} onclick={()=>settings=!settings}><Settings size={15}/></button>{/if}<div class="mini-segments">{#each LOCALES as locale}<button class:on={i18n.locale === locale.id} onclick={() => i18n.set(locale.id)}>{locale.id.toUpperCase()}</button>{/each}</div>
     <div class="mini-segments">{#each THEMES as choice}<button class:on={theme.choice === choice} onclick={() => theme.set(choice)} aria-label={choice} title={choice}>{#if choice === 'dark'}<Moon size={14}/>{:else if choice === 'light'}<Sun size={14}/>{:else}<Monitor size={14}/>{/if}</button>{/each}</div></div>
   </header>
@@ -91,7 +91,7 @@ function resize(event: PointerEvent) {
         <ValidationPanel kind="Collection" id={query.library} {writable} onbusy={busy=>validationBusy=busy} onpart={async id=>{collectionView=false;publicationView=false;await controller.select(id);full=true;}}/></section>
       {:else if full && view.phase === 'ready'}
         <section class="detail-page"><div class="detail-toolbar"><button class="btn quiet" onclick={() => full=false}><ArrowLeft size={15}/>{t('back')}</button><span class="crumb">/</span><span>{view.detail?.reference || t('loading')}</span><span class="grow"></span>{#if writable&&view.detail?.state==='DRAFT'}<button disabled={validationBusy} class="btn" onclick={()=>add(view.detail!.id)}>{tr('Compléter le brouillon','Complete draft')}</button>{/if}</div>
-          <div class="detail-content">{#if view.detail}<Details detail={view.detail} {writable} onbusy={busy=>validationBusy=busy} full/>{:else}<div class="empty-state">{t('loading')}</div>{/if}</div>
+          <div class="detail-content">{#if view.detail}<Details detail={view.detail} {writable} onbusy={busy=>validationBusy=busy} onidentified={()=>controller.saved(view.detail!.id)} full/>{:else}<div class="empty-state">{t('loading')}</div>{/if}</div>
         </section>
       {:else}
       <section class="library-page">
@@ -119,7 +119,7 @@ function resize(event: PointerEvent) {
       </section>{/if}
     </main>
   </div>
-  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{personal?wt('personal'):writable?tr('Sandbox · données de test','Sandbox · test data'):t('copy')}</span>{#snippet right()}<span>{'TECH-06B'} · IPC v1</span>{/snippet}</StatusBar>
+  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{personal?wt('personal'):writable?tr('Sandbox · données de test','Sandbox · test data'):t('copy')}</span>{#snippet right()}<span>{'TECH-06C'} · IPC v1</span>{/snippet}</StatusBar>
 </div>
 
 <style>

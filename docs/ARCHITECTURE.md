@@ -689,3 +689,33 @@ publiques), se connecte à l'adresse numérique vérifiée et valide TLS sur le 
 constructeur initial. Aucun proxy d'environnement ni seconde résolution DNS ;
 toutes les redirections restent refusées. Pas de réseau au démarrage ou sur les
 parcours locaux. Voir [TECH-06B](FABPARTS_2_TECH_06B.md).
+
+### TECH-06C — Assistance IA relue dans Tauri
+
+`AssistanceReview` raccorde `Assistance`/`ChatAssistance` M11 à `Documentation`
+M10. Une session opaque éphémère contient le contexte, son JSON exact, la
+configuration, le Part et la révision d'identification attendus. Préparer ne
+contacte aucun fournisseur. Démarrer exige un consentement pour cette session ;
+modifier contexte, configuration ou composant la révoque. Un worker unique,
+selon le mécanisme borné TECH-06B, ne touche ni SQLite ni l'Asset Store. Annuler
+révoque le résultat sans interrompre un appel HTTP déjà engagé. Une réponse
+retardée n'est pas utilisable ; l'enregistrement reste séparé et atomique via
+`Documentation.accept()` et son contrôle optimiste.
+
+Les commandes `assistance_*` sont strictes et refusées en readonly, pendant une
+préparation d'ingestion ou après restauration en attente de redémarrage.
+Les propositions restent côté Python ; accepter transmet seulement la capacité,
+les champs cochés et la confirmation des remplacements. Aucun prompt/réponse brute
+persisté ; historique M10 GENERATED_AI, fournisseur/modèle/destination, date et
+hash du contexte conservés. Les qualifications M5 gardent leurs entrées existantes :
+ce profil M10 n'altère ni Part ni ResourceChoice et ne confère aucune qualification.
+Les changements pertinents de Part/choix/fichiers restent soumis au contrôle STALE
+M5 existant ; aucun fingerprint historique ou writer M6/M7 modifié.
+
+Après `env_clear()`, Rust transmet uniquement GEMINI_API_KEY et KIPART_AI_API_KEY
+pour M11, en plus des variables techniques déjà autorisées. Aucun champ de clé,
+stockage parallèle, secret dans DTO/log/historique. Les clés connues sont refusées
+dans contexte/configuration/proposition. Une seule commande, `assistance_prepare`,
+a un budget de trame de 256 Kio pour 16 000 caractères Unicode éventuellement
+échappés en JSON ; toutes les autres gardent 16 Kio. Timeout IPC global : 8 s.
+Pas de nouvelle dépendance, schéma, serveur applicatif ou framework d'agents.

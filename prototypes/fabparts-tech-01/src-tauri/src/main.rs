@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod assistance;
 mod diagnostics;
 mod external;
 mod ingestion;
@@ -72,7 +73,7 @@ impl Session {
         let mut bytes = serde_json::to_vec(&request)
             .map_err(|_| Failure::new("INVALID_REQUEST", "Requête invalide."))?;
         bytes.push(b'\n');
-        if bytes.len() > 16384 {
+        if bytes.len() > ipc::request_limit(method) {
             return Err(Failure::new("FRAME_TOO_LARGE", "Requête trop volumineuse."));
         }
         self.child
@@ -195,6 +196,12 @@ impl Engine {
             {
                 return Err(Failure::new("INVALID_PARAMS", "Backup capability required"));
             }
+        }
+        if method.starts_with("assistance_") {
+            assistance::authorize(
+                self.writable(),
+                guard.as_ref().is_some_and(|s| s.preparation.is_some()),
+            )?;
         }
         if method.starts_with("external_") {
             external::authorize(
@@ -523,6 +530,10 @@ async fn restart_session(
     if let Some(path) = std::env::var_os("KIPART_FREECAD_CMD") {
         command = command.env("KIPART_FREECAD_CMD", path);
     }
+    // Only M11 keys are forwarded; no general inheritance, DTO or diagnostic output.
+    for (name, value) in assistance::credentials(|name| std::env::var(name).ok()) {
+        command = command.env(name, value);
+    }
     let (rx, child) = command
         .spawn()
         .map_err(|_| Failure::new("LAUNCH_FAILED", "Impossible de lancer le moteur embarqué."))?;
@@ -628,6 +639,7 @@ fn main() {
             release_model_preview,
             ingestion::ingestion_command,
             external::external_command,
+            assistance::assistance_command,
             ingestion::choose_ingestion_files,
             workspace::workspace_info,
             workspace::backup_workspace,

@@ -9,6 +9,8 @@ from sqlalchemy import Engine, text
 
 from kipartmanager.application.asset_imports import AssetImports
 from kipartmanager.application.asset_previews import AssetPreviews
+from kipartmanager.application.assistance import Assistance
+from kipartmanager.application.assistance_review import AssistanceReview
 from kipartmanager.application.catalogue import Catalogue
 from kipartmanager.application.catalogue_reader import CatalogueReader
 from kipartmanager.application.documentation import Documentation
@@ -26,6 +28,7 @@ from kipartmanager.application.validation import LocalValidation
 from kipartmanager.application.validation_review import ValidationReview
 from kipartmanager.headless_ipc import serve
 from kipartmanager.infrastructure.asset_store import LocalAssetStore
+from kipartmanager.infrastructure.assistance import AssistanceToml, ChatAssistance, protect_secret
 from kipartmanager.infrastructure.catalogue import SqliteCatalogue
 from kipartmanager.infrastructure.datasheets import ManufacturerPDFs, ManufacturerSettings
 from kipartmanager.infrastructure.documentation import LocalProposalReader, SqliteDocumentation
@@ -115,6 +118,7 @@ def main() -> int:
         previews = AssetPreviews(reader, ReadonlyPreviews(data_dir), ModelJobs(convert_mesh))
         ingestion = None
         external = None
+        assistance = None
         if (sandbox or personal) and store:
             libraries = KiCadLibraries(LocalKiCadIndex(data_dir))
             ingestion = Ingestion(
@@ -141,6 +145,11 @@ def main() -> int:
                     ManufacturerPDFs(),
                 ),
             )
+            assistance = AssistanceReview(
+                Assistance(AssistanceToml(data_dir), ChatAssistance()),
+                external.documents,
+                protect_secret,
+            )
         with engine.connect() as connection:
             schema = str(connection.scalar(text("SELECT version_num FROM alembic_version")))
         try:
@@ -156,8 +165,11 @@ def main() -> int:
                 publications,
                 integration,
                 external,
+                assistance,
             )
         finally:
+            if assistance:
+                assistance.close()
             if external:
                 external.close()
             previews.clear()

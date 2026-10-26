@@ -5,8 +5,10 @@ import Disclosure from '../../fabparts-ux/src/components/Disclosure.svelte';
 import type { Detail } from './controller';
 import Resources from './Resources.svelte';
 import ValidationPanel from './ValidationPanel.svelte';
+import AssistancePanel from './AssistancePanel.svelte';
+import {i18n} from '../../fabparts-ux/src/lib/i18n.svelte';
 import { text as t, stateLabel, roles, roleLabel } from './text';
-let { detail, full = false, writable=false, onbusy=()=>{} }: { detail: Detail; full?: boolean; writable?:boolean;onbusy?:(busy:boolean)=>void } = $props();
+let { detail, full = false, writable=false, onbusy=()=>{}, onidentified=()=>{} }: { detail: Detail; full?: boolean; writable?:boolean;onbusy?:(busy:boolean)=>void;onidentified?:()=>Promise<void>|void } = $props();
 const icons = { SYMBOL:Cpu, FOOTPRINT:CircuitBoard, MODEL_3D:Box, DATASHEET:FileText };
 </script>
 {#snippet properties()}
@@ -19,6 +21,9 @@ const icons = { SYMBOL:Cpu, FOOTPRINT:CircuitBoard, MODEL_3D:Box, DATASHEET:File
 {#if full}
 <div class="identity-heading"><div><span class="eyebrow">{detail.category || t('unknown')}</span><h1>{detail.reference}</h1><p>{detail.manufacturer || t('unknown')} · {detail.description || t('unknown')}</p></div><div class="identity-state"><span>{stateLabel(detail.state)}</span></div></div>
 <ValidationPanel id={detail.id} {writable} {onbusy}/>
+<div class="assistance-section"><Disclosure id="component-ai-assistance" label={i18n.locale==='fr'?'Assistance IA · facultative':'AI assistance · optional'}>
+{#if writable}{#key detail.id}<AssistancePanel id={detail.id} onsaved={onidentified}/>{/key}{:else}<p>{i18n.locale==='fr'?'Assistance indisponible en lecture seule.':'Assistance unavailable in read-only mode.'}</p>{/if}
+</Disclosure></div>
 <div class="detail-columns"><div class="detail-resources"><h2 class="section-heading">{t('resources')}</h2><Resources {detail}/></div><aside class="properties">
 {@render properties()}
 <Section id="tech-membership" title={t('libraries')}><div class="members">{#each detail.libraries as library}<span><Folder size={12}/>{library.name}</span>{:else}<span class="secondary">{t('unknown')}</span>{/each}</div></Section>
@@ -71,6 +76,7 @@ const icons = { SYMBOL:Cpu, FOOTPRINT:CircuitBoard, MODEL_3D:Box, DATASHEET:File
 </Disclosure></div>
 {/snippet}
 <style>
+.assistance-section{padding:var(--s3) 0;min-width:0;border-bottom:1px solid var(--border)}
 .resource-meta{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-bottom:1px solid var(--divider)}
 .resource-title{display:flex;gap:8px;align-items:center}.resource-title strong{font-weight:500}.resource-name{font-size:var(--fs-sm);font-weight:500;overflow-wrap:anywhere}
 dd{overflow-wrap:anywhere;min-width:0}p{margin:4px 0}
