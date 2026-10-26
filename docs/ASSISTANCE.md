@@ -127,7 +127,7 @@ et [le JSON mode](https://developers.openai.com/api/docs/guides/structured-outpu
 - Réponse bornée à 256 Kio ; JSON de suggestions jusqu’à 20 000 caractères,
   quatre champs connus au maximum, chacun de 4 096 caractères. Champs inconnus,
   types incorrects, clés dupliquées, blocs Markdown et réponses incomplètes refusés.
-- Timeout socket 30 s pour Gemini/Ollama, 8 s pour autres Chat Completions ; budget
+- Timeout socket 120 s pour Gemini, 30 s pour Ollama, 8 s pour autres Chat Completions ; budget
   de lecture vérifié entre les lectures, 30 s. Pas de retry automatique, y compris
   HTTP 429. Les erreurs affichées ne reprennent pas le corps ou les secrets.
 - Requête/contexte/réponse ne vont dans aucun log ou manifest. Les métadonnées
@@ -216,3 +216,18 @@ conservé et aucun retry. Base de qualification identique après les deux échec
 treize racines personnelles/antérieures inchangées. Fermeture coopérative et
 fixture arrêtée. Ces essais ne diagnostiquent pas rétroactivement l'échec signalé
 avec l'ancienne version et ne qualifient aucun compte fournisseur réel.
+
+### Attente Gemini
+
+Après un délai dépassé avec Gemini 3.8 Flash, l’attente socket Gemini passe de
+30 à 120 secondes. Les limites Ollama/Chat et le timeout IPC de 8 secondes restent
+inchangés : le job est asynchrone, la navigation et l’annulation logique restent
+disponibles. Le budget de lecture de 30 secondes est toujours contrôlé entre
+blocs ; le timeout socket n’est pas une durée maximale de bout en bout. Aucun
+retry ni augmentation du budget de tokens ou changement de modèle.
+
+Le contrôle DNS/TCP/TLS sans clé vers Google a réussi sur le poste. Il ne prouve
+ni l’autorisation de la clé, ni la disponibilité du modèle, ni la cause exacte de
+l’échec précédent. Aucun appel d’inférence réel n’a été relancé. La documentation
+[Google](https://ai.google.dev/gemini-api/docs/troubleshooting#higher-latency-or-token-usage-with-thinking-models)
+confirme une latence supérieure possible avec le raisonnement des modèles 3.x.

@@ -175,6 +175,7 @@ def test_http_contract_and_secret_routing(
 
     class Opener:
         def open(self, req: Any, timeout: int) -> Response:
+            assert timeout == (120 if config.backend is AssistanceBackend.GEMINI else 30)
             captured.append(req)
             return Response(json.dumps(envelope).encode())
 
