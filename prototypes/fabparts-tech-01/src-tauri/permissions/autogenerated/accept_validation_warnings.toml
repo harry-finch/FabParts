@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-accept-validation-warnings"
+description = "Enables the accept_validation_warnings command without any pre-configured scope."
+commands.allow = ["accept_validation_warnings"]
+
+[[permission]]
+identifier = "deny-accept-validation-warnings"
+description = "Denies the accept_validation_warnings command without any pre-configured scope."
+commands.deny = ["accept_validation_warnings"]

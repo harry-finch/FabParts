@@ -604,3 +604,16 @@ migrations contrôlées. `workspace_backup.py` fournit l'unique implémentation 
 snapshot complet et de vérification, réutilisée par le sandbox. Rust acquiert la
 source de restauration par sélecteur natif et limite les capacités à la session.
 Voir [ADR 0004](adr/0004-personal-workspace-and-verified-backups.md).
+
+## TECH-04B — Validation existante connectée
+
+`headless.py` compose LocalValidation avec LocalResourceProbe et
+SqliteValidationReports dans les trois modes. Les constructeurs des sondes
+n'initialisent aucun fichier ; readonly conserve ses protections SQLite.
+`validation_ipc.py` est un adaptateur entrant strict : trois commandes de lecture,
+validation et acceptation. Rust applique aussi le mode et les limites de paramètres.
+`ValidationReview` projette les preuves M5 pour la présentation, borne les pages et
+lie les décisions aux rapports réellement retournés dans la session. Il ne parse
+aucun asset, ne change ni les règles M5 ni les états métier et n'introduit aucune
+persistance parallèle. Les rapports existants restent inclus dans les snapshots
+SQLite TECH-04A. Voir [TECH-04B](FABPARTS_2_TECH_04B.md).

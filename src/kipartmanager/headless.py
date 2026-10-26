@@ -13,6 +13,8 @@ from kipartmanager.application.ingestion import Ingestion
 from kipartmanager.application.kicad import KiCadLibraries
 from kipartmanager.application.model_jobs import ModelJobs
 from kipartmanager.application.resolver import LocalResolver
+from kipartmanager.application.validation import LocalValidation
+from kipartmanager.application.validation_review import ValidationReview
 from kipartmanager.headless_ipc import serve
 from kipartmanager.infrastructure.asset_store import LocalAssetStore
 from kipartmanager.infrastructure.catalogue import SqliteCatalogue
@@ -24,7 +26,9 @@ from kipartmanager.infrastructure.model_preview import convert_mesh
 from kipartmanager.infrastructure.prepared_files import LocalPreparedFiles
 from kipartmanager.infrastructure.readonly_catalogue import open_copy
 from kipartmanager.infrastructure.readonly_previews import ReadonlyPreviews
+from kipartmanager.infrastructure.resource_probe import LocalResourceProbe
 from kipartmanager.infrastructure.user_workspace import UserWorkspace, open_personal
+from kipartmanager.infrastructure.validation_reports import SqliteValidationReports
 
 
 def open_personal_workspace(path: Path | None = None) -> UserWorkspace:
@@ -65,6 +69,13 @@ def main() -> int:
         catalogue = Catalogue(repository, store)
         documentation = SqliteDocumentation(engine)
         reader = CatalogueReader(catalogue, repository, documentation)
+        review = ValidationReview(
+            LocalValidation(
+                catalogue,
+                LocalResourceProbe(LocalAssetStore(data_dir / "assets"), LocalKiCadIndex(data_dir)),
+                SqliteValidationReports(engine),
+            )
+        )
         previews = AssetPreviews(reader, ReadonlyPreviews(data_dir), ModelJobs(convert_mesh))
         ingestion = None
         if (sandbox or personal) and store:
@@ -83,7 +94,14 @@ def main() -> int:
             schema = str(connection.scalar(text("SELECT version_num FROM alembic_version")))
         try:
             serve(
-                reader, sys.stdin.buffer, sys.stdout.buffer, previews, ingestion, schema, personal
+                reader,
+                sys.stdin.buffer,
+                sys.stdout.buffer,
+                previews,
+                ingestion,
+                schema,
+                personal,
+                review,
             )
         finally:
             previews.clear()

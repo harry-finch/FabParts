@@ -3,6 +3,7 @@ mod diagnostics;
 mod ingestion;
 mod ipc;
 mod previews;
+mod validation;
 mod workspace;
 
 use ipc::{Failure, Reply, STARTUP_TIMEOUT, TIMEOUT};
@@ -151,6 +152,13 @@ impl Engine {
                 .map_err(|_| Failure::new("BUSY", "Le moteur est occupé."))
         })
         .await?;
+        if method.starts_with("validation_") {
+            validation::authorize(
+                self.writable(),
+                guard.as_ref().is_some_and(|s| s.preparation.is_some()),
+                method,
+            )?;
+        }
         if method.starts_with("workspace_") {
             if !self.personal {
                 return Err(Failure::new("READ_ONLY", "Personal workspace required"));
@@ -206,7 +214,7 @@ impl Engine {
             .call(
                 method,
                 &params,
-                if method.starts_with("workspace_") {
+                if method.starts_with("workspace_") || method.starts_with("validation_") {
                     Duration::from_secs(300)
                 } else if method == "ingestion_commit" {
                     STARTUP_TIMEOUT
@@ -581,7 +589,10 @@ fn main() {
             workspace::workspace_info,
             workspace::backup_workspace,
             workspace::choose_workspace_backup,
-            workspace::restore_workspace
+            workspace::restore_workspace,
+            validation::get_validation,
+            validation::run_validation,
+            validation::accept_validation_warnings
         ])
         .build(tauri::generate_context!())
         .expect("FabParts TECH-01 startup");
