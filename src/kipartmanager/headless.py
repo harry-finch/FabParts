@@ -12,6 +12,7 @@ from kipartmanager.application.catalogue import Catalogue
 from kipartmanager.application.catalogue_reader import CatalogueReader
 from kipartmanager.application.ingestion import Ingestion
 from kipartmanager.application.kicad import KiCadLibraries
+from kipartmanager.application.kicad_integration import KiCadIntegration
 from kipartmanager.application.model_jobs import ModelJobs
 from kipartmanager.application.publication_review import PublicationReview
 from kipartmanager.application.publications import Publications
@@ -26,6 +27,7 @@ from kipartmanager.infrastructure.documentation import SqliteDocumentation
 from kipartmanager.infrastructure.ingestion_sandbox import open_sandbox
 from kipartmanager.infrastructure.ingestion_transactions import SqliteIngestionTransactions
 from kipartmanager.infrastructure.kicad_index import LocalKiCadIndex
+from kipartmanager.infrastructure.kicad_integration import LocalKiCadIntegration
 from kipartmanager.infrastructure.library_builder import LocalLibraryBuilder
 from kipartmanager.infrastructure.model_preview import convert_mesh
 from kipartmanager.infrastructure.prepared_files import LocalPreparedFiles
@@ -47,6 +49,8 @@ def open_personal_workspace(path: Path | None = None) -> UserWorkspace:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--kicad-config-root", type=Path)
+    parser.add_argument("--kicad-version", action="append", default=[])
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--personal", action="store_true", help="Host-owned personal workspace")
     modes.add_argument("--sandbox", action="store_true", help="Host-only prepared TECH-03 sandbox")
@@ -85,12 +89,22 @@ def main() -> int:
         builder = LocalLibraryBuilder(
             LocalAssetStore(data_dir / "assets"), LocalKiCadIndex(data_dir), data_dir
         )
+        publication_store = LocalPublications(data_dir / "publications", builder)
         publications = PublicationReview(
             Publications(
                 LocalPublisher(catalogue, review.validation, builder),
-                LocalPublications(data_dir / "publications", builder),
+                publication_store,
             ),
             scope=hashlib.sha256(str(data_dir.resolve()).encode()).hexdigest(),
+        )
+        integration = KiCadIntegration(
+            publications.service,
+            LocalKiCadIntegration(
+                data_dir,
+                publication_store,
+                arguments.kicad_config_root,
+                tuple(arguments.kicad_version),
+            ),
         )
         previews = AssetPreviews(reader, ReadonlyPreviews(data_dir), ModelJobs(convert_mesh))
         ingestion = None
@@ -119,6 +133,7 @@ def main() -> int:
                 personal,
                 review,
                 publications,
+                integration,
             )
         finally:
             previews.clear()

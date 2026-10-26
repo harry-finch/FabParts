@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod diagnostics;
 mod ingestion;
+mod integration;
 mod ipc;
 mod previews;
 mod publications;
@@ -126,6 +127,7 @@ impl Drop for Session {
     }
 }
 struct Engine {
+    integration: integration::Configuration,
     data_dir: Mutex<Option<PathBuf>>,
     sandbox_dir: Option<PathBuf>,
     personal: bool,
@@ -153,6 +155,17 @@ impl Engine {
                 .map_err(|_| Failure::new("BUSY", "Le moteur est occupé."))
         })
         .await?;
+        if method.starts_with("integration_") {
+            integration::authorize(
+                self.writable(),
+                guard.as_ref().is_some_and(|s| s.preparation.is_some()),
+                false,
+                method,
+            )?;
+            if !["integration_get", "integration_verify"].contains(&method) {
+                integration::authorize(true, false, integration::running()?, method)?;
+            }
+        }
         if method.starts_with("publication_") {
             publications::authorize(
                 self.writable(),
@@ -222,7 +235,9 @@ impl Engine {
             .call(
                 method,
                 &params,
-                if method.starts_with("publication_") {
+                if method.starts_with("integration_") {
+                    Duration::from_secs(600)
+                } else if method.starts_with("publication_") {
                     publications::timeout(method)
                 } else if method.starts_with("workspace_") || method.starts_with("validation_") {
                     Duration::from_secs(300)
@@ -333,6 +348,7 @@ impl Engine {
                 "DOMAIN_ERROR"
                     | "INVALID_PARAMS"
                     | "READ_FAILED"
+                    | "INTEGRATION_IO"
                     | "RESPONSE_TOO_LARGE"
                     | "READ_ONLY"
             ) {
@@ -479,6 +495,12 @@ async fn restart_session(
         .env("TMPDIR", std::env::temp_dir())
         .set_raw_out(true)
         .set_process_group(true);
+    if let Some(root) = &engine.integration.root {
+        command = command.args(["--kicad-config-root".as_ref(), root.as_os_str()]);
+        for version in &engine.integration.versions {
+            command = command.args(["--kicad-version", version]);
+        }
+    }
     if let Some(path) = directory {
         command = command.args(["--data-dir".as_ref(), path.as_os_str()]);
     }
@@ -563,6 +585,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(Engine {
+            integration: integration::Configuration::discover(),
             data_dir: Mutex::new(data_dir),
             sandbox_dir,
             personal,
@@ -603,6 +626,7 @@ fn main() {
             validation::get_validation,
             validation::run_validation,
             validation::accept_validation_warnings,
+            integration::integration_command,
             publications::publication_query,
             publications::publish_version,
             publications::rebuild_publication
@@ -668,6 +692,7 @@ mod tests {
         tauri::async_runtime::block_on(async {
             let (closing, _) = watch::channel(false);
             let engine = Engine {
+                integration: integration::Configuration::default(),
                 data_dir: Mutex::new(None),
                 sandbox_dir: None,
                 personal: true,
@@ -813,6 +838,7 @@ mod tests {
             issue(&mut session, &handle);
             let (closing, _) = watch::channel(false);
             let engine = Engine {
+                integration: integration::Configuration::default(),
                 data_dir: Mutex::new(None),
                 sandbox_dir: None,
                 personal: false,
@@ -904,6 +930,18 @@ mod tests {
     }
 
     #[test]
+    fn integration_io_failure_keeps_session_for_recovery() {
+        let mut session = Some(empty_session());
+        let result = Engine::finish_call(
+            &mut session,
+            "integration_activate",
+            &json!({}),
+            Err(Failure::new("INTEGRATION_IO", "Permission denied")),
+        );
+        assert!(result.is_err());
+        assert!(session.is_some());
+    }
+    #[test]
     fn failed_transport_discards_all_session_capabilities() {
         let h1 = "a".repeat(48);
         for code in [
@@ -960,6 +998,7 @@ mod tests {
             release(&mut session, &h2);
             let (closing, _) = watch::channel(false);
             let engine = Engine {
+                integration: integration::Configuration::default(),
                 data_dir: Mutex::new(None),
                 sandbox_dir: None,
                 personal: false,

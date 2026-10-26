@@ -632,3 +632,18 @@ sont bloquées en readonly, pendant ingestion et après restauration avant redé
 La récupération consulte l’engagement filesystem M7 ; le journal de demande UI ne
 fait jamais autorité sur une publication. Son périmètre est lié par hash au dossier
 de données effectif. Les sauvegardes TECH-04A incluent déjà l’historique et ses inputs.
+
+### TECH-05B — Installation globale KiCad
+
+Un port IntegrationStore et son adaptateur LocalKiCadIntegration reconstruisent
+une publication M7 vérifiée dans une copie immuable distincte. Les nicknames UUID
+restent stables ; seuls les chemins de cette copie deviennent absolus. Aucun
+changement de schéma, du format M7 ou du builder historique.
+
+L'hôte Rust possède la détection des cibles et le contrôle KiCad fermé. L'IPC ne
+transporte aucun chemin arbitraire. L'éditeur de tables conserve les octets tiers ;
+la paire utilise sauvegarde exacte, journal scellé, état pending et reprise explicite.
+L'échange/exclusivité atomique conserve les inodes concurrents. Les miroirs et
+copies vivent sous config, déjà inclus dans TECH-04A ; une restauration laisse les
+tables externes intactes et exige une réconciliation. Voir
+[TECH-05B](FABPARTS_2_TECH_05B.md) pour les formats, preuves et limites de plateforme.

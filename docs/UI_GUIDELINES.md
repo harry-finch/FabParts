@@ -355,3 +355,18 @@ pour le dossier parent et un sous-dossier neuf généré par l’hôte. L’aide
 uniquement d’intégration de **projet** `${KIPRJMOD}`. Aucune installation globale,
 activation de version ou synchronisation n’est proposée. Tokens, densité, thèmes et
 composants FabApps existants sont conservés ; textes FR/EN typés.
+
+### Intégration globale KiCad — TECH-05B
+
+La section Intégration KiCad dans Publications ajoute l'activation globale aux
+reconstructions de projet TECH-05A. Publier ne change jamais la version active.
+Afficher cible, active/dernière et état réel ; l'état sélectionné n'est pas une
+preuve de validation. Le résumé de chaque activation/rollback/reprise exige une
+case vide avant application. Les chemins et nicknames techniques restent repliés.
+
+Fermer KiCad avant mutation et indiquer son redémarrage, sans promesse de reload.
+Une erreur retire l'ancienne preuve de vérification. Après réponse incertaine,
+relire le journal sans rejouer l'écriture. La reprise reste disponible si M7 est
+illisible. Les décalages après restauration TECH-04A exigent une action explicite.
+Réutiliser Disclosure, boutons et tokens existants ; actions qui se replient et
+texte long sécable, FR/EN et clair/sombre. Pas de nouveau thème ni écran de réglages.
