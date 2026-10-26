@@ -12,11 +12,15 @@ from uuid import UUID
 from kipartmanager import __version__
 from kipartmanager.application.asset_previews import AssetPreviews
 from kipartmanager.application.catalogue_reader import CatalogueReader
+from kipartmanager.application.external_sources import ExternalSources
 from kipartmanager.application.ingestion import Ingestion
 from kipartmanager.application.kicad_integration import KiCadIntegration
 from kipartmanager.application.publication_review import PublicationReview
 from kipartmanager.application.validation_review import ReportChanged, ValidationReview
 from kipartmanager.domain.entities import DomainError, PartState
+from kipartmanager.external_ipc import METHODS as EXTERNAL_METHODS
+from kipartmanager.external_ipc import dispatch as dispatch_external
+from kipartmanager.external_ipc import validate as validate_external
 from kipartmanager.infrastructure.ingestion_sandbox import checked_root
 from kipartmanager.infrastructure.readonly_catalogue import SCHEMA
 from kipartmanager.infrastructure.user_workspace import UserWorkspace
@@ -133,6 +137,7 @@ def respond(
     review: ValidationReview | None = None,
     publications: PublicationReview | None = None,
     integration: KiCadIntegration | None = None,
+    external: ExternalSources | None = None,
 ) -> dict[str, Any]:
     identity = None
     try:
@@ -155,6 +160,23 @@ def respond(
         method = request["method"]
         if not isinstance(method, str):
             raise ProtocolError("INVALID_REQUEST", "Nom de commande requis.")
+        if method in EXTERNAL_METHODS:
+            if (
+                ingestion is None
+                or external is None
+                or bool(workspace and workspace.requires_restart)
+            ):
+                raise ProtocolError("READ_ONLY", "External sources unavailable in this session")
+            try:
+                params = validate_external(method, request["params"])
+            except (ValueError, TypeError) as error:
+                raise ProtocolError("INVALID_PARAMS", str(error)) from error
+            return {
+                "protocol_version": 1,
+                "request_id": identity,
+                "ok": True,
+                "result": dispatch_external(external, method, params),
+            }
         if method in INTEGRATION_METHODS:
             if integration is None:
                 raise ProtocolError("READ_FAILED", "Integration unavailable")
@@ -258,6 +280,8 @@ def respond(
                 params = validate_ingestion(method, request["params"])
             except (ValueError, TypeError) as error:
                 raise ProtocolError("INVALID_PARAMS", str(error)) from error
+            if external and method in {"ingestion_begin", "ingestion_cancel", "ingestion_commit"}:
+                external.close()
             result = dispatch(ingestion, method, params)
             return {"protocol_version": 1, "request_id": identity, "ok": True, "result": result}
         params = validate_params(method, request["params"])
@@ -327,6 +351,7 @@ def serve(
     review: ValidationReview | None = None,
     publications: PublicationReview | None = None,
     integration: KiCadIntegration | None = None,
+    external: ExternalSources | None = None,
 ) -> None:
     while raw := source.readline(MAX_REQUEST + 1):
         if len(raw) > MAX_REQUEST:
@@ -347,6 +372,7 @@ def serve(
                 review,
                 publications,
                 integration,
+                external,
             )
         encoded = json.dumps(response, ensure_ascii=False, allow_nan=False).encode()
         if len(encoded) > MAX_RESPONSE:

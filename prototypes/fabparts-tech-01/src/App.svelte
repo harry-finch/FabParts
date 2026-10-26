@@ -61,7 +61,7 @@ function resize(event: PointerEvent) {
 </script>
 <svelte:window onkeydown={keydown}/>
 <div class="app-shell">
-  <header class="appbar"><div class="brand"><img src="/logo.svg" alt=""/><strong>FabParts</strong></div><span class="tagline">{t('libraries')}</span><span class="demo-label">{'TECH-06A'} <span>{personal?wt('personal'):writable?tr('Sandbox local','Local sandbox'):t('copy')}</span></span>
+  <header class="appbar"><div class="brand"><img src="/logo.svg" alt=""/><strong>FabParts</strong></div><span class="tagline">{t('libraries')}</span><span class="demo-label">{'TECH-06B'} <span>{personal?wt('personal'):writable?tr('Sandbox local','Local sandbox'):t('copy')}</span></span>
     <div class="bar-right">{#if personal}<button class="btn quiet icon" disabled={adding||workspaceBusy||validationBusy} aria-label={wt('settings')} title={wt('settings')} onclick={()=>settings=!settings}><Settings size={15}/></button>{/if}<div class="mini-segments">{#each LOCALES as locale}<button class:on={i18n.locale === locale.id} onclick={() => i18n.set(locale.id)}>{locale.id.toUpperCase()}</button>{/each}</div>
     <div class="mini-segments">{#each THEMES as choice}<button class:on={theme.choice === choice} onclick={() => theme.set(choice)} aria-label={choice} title={choice}>{#if choice === 'dark'}<Moon size={14}/>{:else if choice === 'light'}<Sun size={14}/>{:else}<Monitor size={14}/>{/if}</button>{/each}</div></div>
   </header>
@@ -119,7 +119,7 @@ function resize(event: PointerEvent) {
       </section>{/if}
     </main>
   </div>
-  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{personal?wt('personal'):writable?tr('Sandbox · données de test','Sandbox · test data'):t('copy')}</span>{#snippet right()}<span>{'TECH-06A'} · IPC v1</span>{/snippet}</StatusBar>
+  <StatusBar state={view.phase === 'failed' ? 'failed' : view.phase === 'starting' || view.loading ? 'loading' : 'ready'} version={view.health?.engine_version}><span class="sep"></span><span>{personal?wt('personal'):writable?tr('Sandbox · données de test','Sandbox · test data'):t('copy')}</span>{#snippet right()}<span>{'TECH-06B'} · IPC v1</span>{/snippet}</StatusBar>
 </div>
 
 <style>

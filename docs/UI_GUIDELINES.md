@@ -395,3 +395,19 @@ prioritaires ; modifier l'identité retire les anciennes suggestions non retenue
 Sans index/résultat, conserver l'import manuel et le brouillon. Reprendre la hauteur
 SVG partagée de 144 px ; ne pas relancer une conversion pour une modification de
 métadonnée sans changement de ressource. FR/EN, clair/sombre et largeur réduite.
+
+### Sources externes facultatives — TECH-06B
+
+La recherche locale reste l'action principale de l'assistant. À la troisième
+étape, « Compléter avec la recherche officielle KiCad… » ouvre un panneau compact.
+Type, bibliothèque précise et terme sont explicites ; nom, description, révision,
+commit et source sont examinables avant le téléchargement. Télécharger prépare
+un aperçu ; « Retenir cette ressource » puis l'enregistrement restent nécessaires.
+Le choix local existant n'est pas remplacé par le téléchargement.
+
+Les mêmes réglages M9/M10 sont disponibles dans Paramètres et le panneau ; aucun
+réglage ne lance le réseau. Le PDF exige une URL exacte et une case de consentement
+réinitialisée à chaque modification/téléchargement. Annulation et erreurs réseau
+laissent accessibles navigation et parcours local. Les fichiers téléchargés sont
+identifiés comme tels, distincts des fichiers fournis. FR/EN et tokens Fab existants,
+sans quatrième étape ni nouveau système de styles.

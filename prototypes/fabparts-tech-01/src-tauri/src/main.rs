@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod diagnostics;
+mod external;
 mod ingestion;
 mod integration;
 mod ipc;
@@ -194,6 +195,14 @@ impl Engine {
             {
                 return Err(Failure::new("INVALID_PARAMS", "Backup capability required"));
             }
+        }
+        if method.starts_with("external_") {
+            external::authorize(
+                self.writable(),
+                guard.as_ref().and_then(|s| s.preparation.as_deref()),
+                method,
+                &params,
+            )?;
         }
         if method.starts_with("ingestion_") {
             ingestion::authorize(
@@ -618,6 +627,7 @@ fn main() {
             read_mesh_chunk,
             release_model_preview,
             ingestion::ingestion_command,
+            external::external_command,
             ingestion::choose_ingestion_files,
             workspace::workspace_info,
             workspace::backup_workspace,

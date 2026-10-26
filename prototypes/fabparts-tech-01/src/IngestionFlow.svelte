@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Upload, FileText, Check, Search, TriangleAlert, 
 import { i18n } from '../../fabparts-ux/src/lib/i18n.svelte';
 import Disclosure from '../../fabparts-ux/src/components/Disclosure.svelte';
 import AssetPreview from './AssetPreview.svelte';
+import ExternalSourcesPanel from './ExternalSourcesPanel.svelte';
 import { roleLabel } from './text';
 import { IngestionController, initialIngestion, browserRecovery, ingestionRoles, type IngestionState } from './ingestion';
 let { personal=false, partId='', library='all', oncancel, onsave, onexisting }:{
@@ -12,6 +13,7 @@ let { personal=false, partId='', library='all', oncancel, onsave, onexisting }:{
 }=$props();
 let s=$state<IngestionState>(initialIngestion());
 let queries=$state<Record<string,string>>({});
+let externalOpen=$state(false);
 let searchOpen=$state<Record<string,boolean>>({});
 const flow=new IngestionController(invoke,value=>s=value,id=>onsave(id),browserRecovery);
 const tr=(fr:string,en:string)=>i18n.locale==='fr'?fr:en;
@@ -86,6 +88,8 @@ const reasonLabel=(reason?:string)=>({name_match:tr('Recherche par nom','Name se
     {:else}
       <div class="intro review-intro"><div><h2>{s.fields.reference||s.fields.mpn} <span class="secondary">· {s.fields.manufacturer} · {s.fields.package_name||s.session.packages.find(p=>p.id===s.fields.package_id)?.name||tr('Package à compléter','Package missing')}</span></h2><p>{tr('Choisissez explicitement les ressources à conserver et examinez leurs aperçus.','Explicitly choose which resources to keep and inspect their previews.')}</p></div><button class="btn" onclick={()=>flow.back(1)}>{tr('Modifier','Edit')}</button></div>
       <div class="row"><button class="btn" disabled={s.discovering} onclick={()=>flow.discover()}><Search size={14}/>{tr('Rechercher des ressources','Find resources')}</button><span class="small secondary" role="status">{s.discovering?tr('Recherche locale en cours… les résultats apparaissent par ressource.','Searching locally… results appear by resource.'):s.discovered?tr('Propositions locales · aucun choix automatique','Local suggestions · no automatic selection'):''}</span></div>
+      <button class="btn quiet" aria-expanded={externalOpen} onclick={()=>externalOpen=!externalOpen}>{tr('Compléter avec la recherche officielle KiCad…','Extend with official KiCad search…')}</button>
+      {#if externalOpen}<ExternalSourcesPanel preparation={s.session.preparation} query={s.fields.mpn||s.fields.reference} onstaged={value=>flow.addExternal(value)}/>{/if}
       {#if s.metadata.length||s.proposedPackages.length}<Disclosure id="guided-metadata" label={tr('Informations locales proposées','Suggested local information')}>
         <p class="small secondary">{tr('Chaque valeur retenue garde sa provenance. Les champs saisis restent prioritaires.','Each accepted value retains its source. Entered fields take precedence.')}</p>
         {#each s.metadata as item}<div class="row"><span class="small">{item.field==='manufacturer'?tr('Fabricant','Manufacturer'):item.field==='category'?tr('Catégorie','Category'):'MPN'} : <strong>{item.value}</strong> · {item.source}</span><button class="btn quiet" disabled={s.discovering||s.acceptedMetadata[item.field]===item.token} onclick={()=>flow.acceptMetadata(item)}>{s.acceptedMetadata[item.field]===item.token?tr('Retenue','Accepted'):s.fields[item.field]&&s.fields[item.field]!==item.value?tr('Remplacer ce champ','Replace this field'):tr('Retenir ce champ','Accept this field')}</button></div>{/each}
@@ -104,9 +108,9 @@ const reasonLabel=(reason?:string)=>({name_match:tr('Recherche par nom','Name se
             <div class="resource-choice">
               <div class="resource-select"><label><span class="sr-only">{tr('Ressource','Resource')}</span><select class="input" value={previewToken} onchange={e=>flow.preview(role,e.currentTarget.value)} aria-label={tr('Examiner : ','Inspect: ')+roleLabel(role)}>
                 <option value="" >{tr('Aucun aperçu','No preview')}</option>
-                {#each s.candidates.filter(c=>c.role===role) as candidate}<option value={candidate.token} disabled={!!candidate.warning}>{candidate.name} · {candidate.storage==='staged'?tr('Fourni','Provided'):candidate.storage==='managed'?tr('Géré','Managed'):'KiCad'}</option>{/each}
+                {#each s.candidates.filter(c=>c.role===role) as candidate}<option value={candidate.token} disabled={!!candidate.warning}>{candidate.name} · {candidate.storage==='staged'?(candidate.origin==='USER_PROVIDED'?tr('Fourni','Provided'):tr('Téléchargé','Downloaded')):candidate.storage==='managed'?tr('Géré','Managed'):'KiCad'}</option>{/each}
               </select></label>{#if !shared}<button class="btn quiet" aria-label={tr('Recherche locale : ','Local search: ')+roleLabel(role)} aria-expanded={!!searchOpen[role]} onclick={()=>searchOpen[role]=!searchOpen[role]}><Search size={14}/></button>{/if}</div>
-              {#if proposed}<span class="small secondary">{matchLabel(proposed.match)} · {proposed.storage==='staged'?tr('Fichier fourni','Provided file'):reasonLabel(proposed.reason)}{#if proposed.source} · {proposed.source}{/if}{#if proposed.package} · {proposed.package}{/if}</span>
+              {#if proposed}<span class="small secondary">{matchLabel(proposed.match)} · {proposed.storage==='staged'?(proposed.origin==='USER_PROVIDED'?tr('Fichier fourni','Provided file'):tr('Téléchargé pour examen','Downloaded for inspection')):reasonLabel(proposed.reason)}{#if proposed.source} · {proposed.source}{/if}{#if proposed.package} · {proposed.package}{/if}</span>
               <span class="small">{selected?.token===proposed.token?tr('Retenue pour l’enregistrement','Selected for saving'):tr('Proposition non retenue','Suggestion not selected')}</span>
               {#if !shared && selected?.token!==proposed.token}<button class="btn" disabled={!!proposed.warning||s.discovering} onclick={()=>flow.choose(role,proposed.token)}>{tr('Retenir cette ressource','Select this resource')}</button>{/if}{/if}
               {#if selected && selected.token!==proposed?.token}<span class="small">{tr('Choix conservé : ','Selection kept: ')}{selected.name}</span>{/if}
@@ -151,14 +155,14 @@ const reasonLabel=(reason?:string)=>({name_match:tr('Recherche par nom','Name se
 {/snippet}
 <style>
 /* UX 02 AddFlow dimensions and Fab tokens, with the real TECH-02 preview grid. */
-.add-flow{display:grid;grid-template-rows:auto auto 1fr auto;min-height:0;height:100%}
+.add-flow{min-width:0;display:grid;grid-template-rows:auto auto 1fr auto;min-height:0;height:100%}
 .page-heading{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 12px;border-bottom:1px solid var(--border);background:var(--bg-panel)}
 h1,h2{font-size:var(--fs-lg);font-weight:600;margin:0}.page-heading>span{margin-left:auto}
 .steps{display:flex;padding:0 24px;border-bottom:1px solid var(--border);background:var(--bg-panel);gap:24px}
 .steps button{display:flex;align-items:center;gap:8px;border:0;border-bottom:2px solid transparent;background:none;color:var(--text-secondary);min-height:42px;font-size:var(--fs-sm)}
 .steps button.active{color:var(--text-primary);border-color:var(--accent)}.steps button:disabled{opacity:.5}
 .steps button span{display:grid;place-items:center;min-width:18px;height:18px;border:1px solid var(--border-strong);border-radius:50%;font-size:var(--fs-xs)}
-.flow-body{overflow:auto;padding:16px 24px;max-width:1180px;width:100%;margin:0 auto}fieldset{border:0;padding:0;margin:0;min-width:0}
+.flow-body{min-width:0;overflow:auto;padding:16px 24px;max-width:1180px;width:100%;margin:0 auto}fieldset{border:0;padding:0;margin:0;min-width:0}
 .intro{margin-bottom:24px}.intro p{margin:8px 0 0;color:var(--text-secondary);font-size:var(--fs-sm)}
 .input-columns{display:grid;grid-template-columns:1fr 1fr;gap:32px}.form-section{display:flex;flex-direction:column;gap:12px;min-width:0}
 h3{font-size:var(--fs-xs);letter-spacing:.06em;text-transform:uppercase;color:var(--text-section);margin:0 0 4px}
@@ -173,7 +177,7 @@ h3{font-size:var(--fs-xs);letter-spacing:.06em;text-transform:uppercase;color:va
 .duplicate{border-top:1px solid var(--border);padding-top:16px;margin-top:16px}.duplicate-row{display:flex;flex-direction:column;gap:8px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}
 .resources-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3)}.resource{min-width:0;border:1px solid var(--border);background:var(--bg-panel)}
 .resource header{min-height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--s3);border-bottom:1px solid var(--divider);gap:8px;flex-wrap:wrap}
-.resource header span{display:flex;align-items:center;gap:8px;font-size:var(--fs-sm)}.resource-choice{padding:8px;display:flex;flex-direction:column;gap:6px}.resource-search{display:flex;gap:4px}.resource-select{display:flex;align-items:center;gap:4px}.resource-select label{flex:1;min-width:0}.resource-select select{height:28px;padding:2px 6px}
+.resource header span{display:flex;align-items:center;gap:8px;font-size:var(--fs-sm)}.resource-choice>span{overflow-wrap:anywhere}.resource-choice{padding:8px;display:flex;flex-direction:column;gap:6px}.resource-search{display:flex;gap:4px}.resource-select{display:flex;align-items:center;gap:4px}.resource-select label{flex:1;min-width:0}.resource-select select{height:28px;padding:2px 6px}
 .empty-preview{min-height:174px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--text-secondary);font-size:var(--fs-sm);background:var(--bg-workspace)}
 @media(max-width:1000px){.flow-body{padding:16px}.steps{gap:12px;padding:0 12px}.input-columns{gap:20px}.flow-footer>span,.page-heading>span{display:none}}
 @media(max-width:750px){.input-columns,.resources-grid{grid-template-columns:1fr}.steps{gap:4px}.steps button{font-size:var(--fs-xs)}.steps :global(svg){display:none}.page-heading{flex-wrap:wrap}.page-heading h1{font-size:var(--fs-sm)}}

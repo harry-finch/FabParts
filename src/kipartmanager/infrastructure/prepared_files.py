@@ -102,7 +102,7 @@ class LocalPreparedFiles:
             raise DomainError("Fichier préparé modifié ; recommencer la sélection.")
         return data
 
-    def finish(self, preparation: str, handle: str, sha256: str) -> PreparedFile:
+    def finish(self, preparation: str, handle: str, sha256: str, symbol: str = "") -> PreparedFile:
         transfer = self._transfer(preparation, handle)
         data = self.content(preparation, handle)
         if transfer.received != transfer.size or hashlib.sha256(data).hexdigest() != sha256:
@@ -110,7 +110,9 @@ class LocalPreparedFiles:
         file = AssetFile(
             sha256, len(data), Path(transfer.filename).suffix.lower(), transfer.filename
         )
-        content = self.previews.read(self.root / preparation, handle, file.sha256, file.asset_type)
+        content = self.previews.read(
+            self.root / preparation, handle, file.sha256, file.asset_type, symbol
+        )
         if file.asset_type is AssetType.DATASHEET and b"%%EOF" not in data[-4096:]:
             raise DomainError("PDF incomplet : fin de document absente.")
         if file.asset_type is AssetType.MODEL_3D:
@@ -120,7 +122,7 @@ class LocalPreparedFiles:
             elif not data.lstrip().startswith(b"ISO-10303-21;") or b"END-ISO-10303-21;" not in data:
                 raise DomainError("Le fichier ne contient pas un document STEP complet.")
         symbols = (
-            tuple(dict.fromkeys(d.name for d in content.drawings))
+            ((symbol,) if symbol else tuple(dict.fromkeys(d.name for d in content.drawings)))
             if (file.asset_type is AssetType.SYMBOL)
             else ()
         )

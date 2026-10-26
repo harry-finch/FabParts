@@ -664,3 +664,28 @@ et dont la valeur concorde sont acceptées via Identification.accept et le dép�
 transactionnel existants. La provenance renvoie au Part source et à sa révision.
 La saisie manuelle garde sa provenance utilisateur. Pas de migration, stockage
 parallèle ni changement M6-1/M7/TECH-05B. Voir [TECH-06A](FABPARTS_2_TECH_06A.md).
+
+### TECH-06B — Sources externes facultatives
+
+`ExternalSources` raccorde `RemoteLibraries` M9 et `Documentation` M10 au wizard
+sans appeler leurs imports immédiats. Un unique worker daemon réalise le réseau,
+sans SQLite ni Asset Store. Les commandes start/status/cancel sont courtes ; le
+polling d'une préparation encore valide transfère le résultat vérifié vers
+`PreparedFiles`. Capacités opaques, configuration attendue et vérification du
+candidat complet empêchent une substitution entre recherche et téléchargement.
+Une annulation révoque le résultat ; une requête HTTP en cours termine sous ses
+limites avant qu'une nouvelle puisse commencer. Le timeout IPC reste inchangé.
+
+Le fichier multi-symboles complet est conservé ; seul le symbole choisi et ses
+parents sont analysés pour l'aperçu. Au commit existant, `AssetImports` conserve
+origine officielle/constructeur, référence commit/URL et SHA-256. Aucune association
+ni Asset canonique avant confirmation. Les limites 32 Mio réseau et 16 Mio staging
+restent distinctes ; un dépassement est refusé explicitement. Les aperçus KiCad
+conservent également leur propre limite de 8 Mio.
+
+Les paramètres restent les TOML M9/M10 locaux, désactivés par défaut. Le transport
+PDF M10 refuse les réponses DNS privées/non publiques (même mélangées à des IP
+publiques), se connecte à l'adresse numérique vérifiée et valide TLS sur le nom
+constructeur initial. Aucun proxy d'environnement ni seconde résolution DNS ;
+toutes les redirections restent refusées. Pas de réseau au démarrage ou sur les
+parcours locaux. Voir [TECH-06B](FABPARTS_2_TECH_06B.md).
